@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -20,4 +21,39 @@ func (app *application) readIDParam(r *http.Request) (int64, error) {
 	}
 
 	return id, nil
+}
+
+// writeJSON is a helper method for sending JSON responses. It handles marshaling data,
+// setting headers, and writing the response body. The function will:
+// - Marshal the input data to JSON (returning error on failure)
+// - Append a newline to make the response more readable
+// - Set any provided headers from the headers map
+// - Set the Content-Type header to application/json
+// - Write the HTTP status code
+// - Send the JSON response body
+func (app *application) writeJSON(w http.ResponseWriter, status int, data any, headers http.Header) error {
+	// Marshal the data to JSON, returning error if conversion fails
+	js, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	// Append newline to make terminal displays cleaner
+	js = append(js, '\n')
+
+	// Set any provided headers from the headers map
+	for key, value := range headers {
+		w.Header()[key] = value
+	}
+
+	// Set content type header first to ensure proper JSON handling
+	w.Header().Set("Content-Type", "application/json")
+
+	// Write HTTP status code to header
+	w.WriteHeader(status)
+
+	// Send the JSON body (already validated via Marshal)
+	w.Write(js)
+
+	return nil
 }

@@ -1,18 +1,28 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 )
 
+// healthcheckHandler is an HTTP handler that returns the current status of the application.
+// It responds with a JSON object containing:
+// - The service status ("available")
+// - The current environment (from app.config)
+// - The application version (from version constant)
+// If JSON serialization fails, it logs the error and returns a 500 Internal Server Error response.
 func (app *application) healthcheckHandler(w http.ResponseWriter, r *http.Request) {
-	// Create a fixed-format JSON response from a string
-	js := `{"status": "available", "environment": %q, "version": %q}`
-	js = fmt.Sprintf(js, app.config.env, version)
+	// Map to hold the information that we want to send in the response
+	data := map[string]string{
+		"status":      "available",
+		"environment": app.config.env,
+		"version":     version,
+	}
 
-	// Set the "Content-Type: application/json" header on the response
-	w.Header().Set("Content-Type", "application/json")
-
-	// Write the JSON as the HTTP response body
-	w.Write([]byte(js))
+	// Attempt to write JSON response using the application's helper method
+	err := app.writeJSON(w, http.StatusOK, data, nil)
+	if err != nil {
+		// Log the error and return a generic error message to the client
+		app.logger.Error(err.Error())
+		http.Error(w, "The server encountered a problem and could not process your request", http.StatusInternalServerError)
+	}
 }
