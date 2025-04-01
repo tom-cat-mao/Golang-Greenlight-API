@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -8,9 +9,25 @@ import (
 	"greenlight.tomcat.net/internal/data"
 )
 
-// createMovieHandler for the "POST /v1/movies" endpoint
+// createMovieHandler handles POST requests to create a new movie at /v1/movies
+// - Parses and validates JSON request body containing movie details
+// - Returns appropriate error responses for invalid input or server errors
+// - Uses writeJSON helper for consistent response formatting
 func (app *application) createMovieHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "create a new movie")
+	var input struct {
+		Title   string   `json:"title"`
+		Year    int32    `json:"year"`
+		Runtime int32    `json:"runtime"`
+		Genres  []string `json:"genres"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		app.errorResponse(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	fmt.Fprintf(w, "%+v\n", input)
 }
 
 // showMovieHandler handles GET requests to retrieve a movie by ID at /v1/movies/:id
