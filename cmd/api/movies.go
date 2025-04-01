@@ -21,7 +21,7 @@ func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request)
 	// Get the value of the "id" parameters from the slice.
 	id, err := app.readIDParam(r)
 	if err != nil || id < 1 {
-		http.NotFound(w, r)
+		app.notFoundResponse(w, r)
 		return
 	}
 
@@ -35,7 +35,6 @@ func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request)
 	}
 	err = app.writeJSON(w, http.StatusOK, envelope{"movie": movie}, nil)
 	if err != nil {
-		app.logger.Error(err.Error())
-		http.Error(w, "The server encountered a problem and could not process your request", http.StatusInternalServerError)
+		app.serverErrorResponse(w, r, err)
 	}
 }

@@ -26,8 +26,7 @@ func (app *application) healthcheckHandler(w http.ResponseWriter, r *http.Reques
 	// Attempt to write JSON response using the application's helper method
 	err := app.writeJSON(w, http.StatusOK, env, nil)
 	if err != nil {
-		// Log the error and return a generic error message to the client
-		app.logger.Error(err.Error())
-		http.Error(w, "The server encountered a problem and could not process your request", http.StatusInternalServerError)
+		// Use the new error log helper
+		app.serverErrorResponse(w, r, err)
 	}
 }
