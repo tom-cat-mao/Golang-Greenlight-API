@@ -9,6 +9,14 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
+// envelope is a helper type for wrapping JSON responses in a consistent structure.
+// It acts as a map where string keys can map to any value type (any), allowing flexible
+// response structures while maintaining a standardized format. Typically used to return:
+// - A top-level "status" field indicating operation outcome
+// - System information or resource data in nested objects/collections
+// Example: {"status": "success", "data": { ... }}
+type envelope map[string]any
+
 // Retrieve the "id" URL parameter from the current request context, then convert it to
 // an integer and return it.
 // If the operation isn't successful, return 0 and an error.
@@ -31,9 +39,9 @@ func (app *application) readIDParam(r *http.Request) (int64, error) {
 // - Set the Content-Type header to application/json
 // - Write the HTTP status code
 // - Send the JSON response body
-func (app *application) writeJSON(w http.ResponseWriter, status int, data any, headers http.Header) error {
+func (app *application) writeJSON(w http.ResponseWriter, status int, data envelope, headers http.Header) error {
 	// Marshal the data to JSON, returning error if conversion fails
-	js, err := json.Marshal(data)
+	js, err := json.MarshalIndent(data, "", "\t")
 	if err != nil {
 		return err
 	}

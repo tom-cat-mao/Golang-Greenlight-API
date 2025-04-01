@@ -13,9 +13,10 @@ func (app *application) createMovieHandler(w http.ResponseWriter, r *http.Reques
 	fmt.Fprintln(w, "create a new movie")
 }
 
-// showMovieHandler for the "GET /v1/movies/:id" endpoint
-// - Retrieve the interppolated "id" parameter from the current URL and include it in a placeholder
-// respose.
+// showMovieHandler handles GET requests to retrieve a movie by ID at /v1/movies/:id
+// - Parses and validates the :id parameter from the URL path
+// - Returns a JSON response containing mock movie data for demonstration purposes
+// - Uses writeJSON helper for consistent response formatting and error handling
 func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the value of the "id" parameters from the slice.
 	id, err := app.readIDParam(r)
@@ -32,7 +33,7 @@ func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request)
 		Genres:    []string{"drama", "romance", "war"},
 		Version:   1,
 	}
-	err = app.writeJSON(w, http.StatusOK, movie, nil)
+	err = app.writeJSON(w, http.StatusOK, envelope{"movie": movie}, nil)
 	if err != nil {
 		app.logger.Error(err.Error())
 		http.Error(w, "The server encountered a problem and could not process your request", http.StatusInternalServerError)

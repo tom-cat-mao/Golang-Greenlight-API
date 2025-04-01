@@ -4,22 +4,27 @@ import (
 	"net/http"
 )
 
-// healthcheckHandler is an HTTP handler that returns the current status of the application.
-// It responds with a JSON object containing:
-// - The service status ("available")
-// - The current environment (from app.config)
-// - The application version (from version constant)
-// If JSON serialization fails, it logs the error and returns a 500 Internal Server Error response.
+// healthcheckHandler returns the application status and system information in a JSON response.
+// The response envelope contains:
+//   - "status": String indicating service availability ("available")
+//   - "system_info": System metadata including:
+//     environment: deployment environment (from app.config.env)
+//     version: application version (from compile-time version constant)
+//
+// On JSON encoding errors, logs the error using the application logger and returns a 500 status
+// with a generic error message to prevent leaking sensitive error details.
 func (app *application) healthcheckHandler(w http.ResponseWriter, r *http.Request) {
 	// Map to hold the information that we want to send in the response
-	data := map[string]string{
-		"status":      "available",
-		"environment": app.config.env,
-		"version":     version,
+	env := envelope{
+		"status": "available",
+		"system_info": map[string]string{
+			"environment": app.config.env,
+			"version":     version,
+		},
 	}
 
 	// Attempt to write JSON response using the application's helper method
-	err := app.writeJSON(w, http.StatusOK, data, nil)
+	err := app.writeJSON(w, http.StatusOK, env, nil)
 	if err != nil {
 		// Log the error and return a generic error message to the client
 		app.logger.Error(err.Error())
