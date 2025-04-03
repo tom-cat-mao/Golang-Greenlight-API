@@ -84,3 +84,15 @@ func (app *application) methodNotAllowedResponse(w http.ResponseWriter, r *http.
 	// with the appropriate HTTP status code
 	app.errorResponse(w, r, http.StatusMethodNotAllowed, message)
 }
+
+// badRequestResponse sends a JSON-formatted 400 Bad Request response to the client.
+// It's used when the client sends invalid or malformed data in the request.
+// Parameters:
+// - w: http.ResponseWriter to write the HTTP response
+// - r: *http.Request to extract request context for logging
+// - err: error containing details about what made the request invalid
+func (app *application) badRequestResponse(w http.ResponseWriter, r *http.Request, err error) {
+	// Use the application's errorResponse helper to send the JSON response
+	// with a 400 status code and the error message from the provided error
+	app.errorResponse(w, r, http.StatusBadRequest, err.Error())
+}

@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -63,5 +65,57 @@ func (app *application) writeJSON(w http.ResponseWriter, status int, data envelo
 	// Send the JSON body (already validated via Marshal)
 	w.Write(js)
 
+	return nil
+}
+
+// readJSON decodes the JSON body of a request into a destination struct. It handles common
+// JSON decoding errors and returns appropriate error messages. The function will:
+// - Decode the request body into the destination interface
+// - Handle syntax errors in the JSON body
+// - Catch unexpected EOF errors indicating malformed JSON
+// - Validate proper JSON types for struct fields
+// - Check for empty request bodies
+// - Panic on invalid unmarshal targets (developer error)
+func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	// Decode request body directly into target destination
+	err := json.NewDecoder(r.Body).Decode(dst)
+	if err != nil {
+		// Declare error type pointers for specific error handling
+		var syntaxError *json.SyntaxError
+		var unmarshalTypeError *json.UnmarshalTypeError
+		var invalidUnmarshalError *json.InvalidUnmarshalError
+
+		// Handle different types of JSON decoding errors
+		switch {
+		// Syntax error in JSON (e.g., missing comma, incorrect brackets)
+		case errors.As(err, &syntaxError):
+			return fmt.Errorf("body contains badly-formed JSON (at character %d)", syntaxError.Offset)
+
+		// Unexpected EOF indicates malformed JSON structure
+		case errors.Is(err, io.ErrUnexpectedEOF):
+			return errors.New("body contains badly-formed JSON")
+
+		// Type mismatch error for a specific field in destination struct
+		case errors.As(err, &unmarshalTypeError):
+			if unmarshalTypeError.Field != "" {
+				return fmt.Errorf("body contains incorrect JSON type for field %q", unmarshalTypeError.Field)
+			}
+			return fmt.Errorf("body contains incorrect JSON type (at character %d)", unmarshalTypeError.Offset)
+
+		// Empty request body error
+		case errors.Is(err, io.EOF):
+			return errors.New("body must not be empty")
+
+		// Invalid unmarshal target (indicates programmer error)
+		case errors.As(err, &invalidUnmarshalError):
+			panic(err)
+
+		// Fallback for unexpected errors
+		default:
+			return err
+		}
+	}
+
+	// Return nil when decoding is successful
 	return nil
 }
