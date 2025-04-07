@@ -96,3 +96,16 @@ func (app *application) badRequestResponse(w http.ResponseWriter, r *http.Reques
 	// with a 400 status code and the error message from the provided error
 	app.errorResponse(w, r, http.StatusBadRequest, err.Error())
 }
+
+// failedValidationResponse sends a JSON-formatted 422 Unprocessable Entity response to the client.
+// It's specifically used when the client's request data fails validation checks.
+// The 'errors' parameter should be a map where keys are field names and values are error messages.
+// Parameters:
+//   - w: http.ResponseWriter to write the HTTP response.
+//   - r: *http.Request to extract request context for logging.
+//   - errors: A map of validation errors, where keys are field names and values are error messages.
+func (app *application) failedValidationResponse(w http.ResponseWriter, r *http.Request, errors map[string]string) {
+	// Use the application's errorResponse helper to send the JSON response
+	// with a 422 status code and the validation errors.
+	app.errorResponse(w, r, http.StatusUnprocessableEntity, errors)
+}

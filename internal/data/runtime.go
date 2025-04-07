@@ -38,22 +38,30 @@ func (r Runtime) MarshalJSON() ([]byte, error) {
 // - Assigns the parsed integer to the Runtime receiver.
 // Returns an error if the format is invalid or parsing fails.
 func (r *Runtime) UnmarshalJSON(jsonValue []byte) error {
+	// Remove the quotes from the JSON string.
 	unquotedJSONValue, err := strconv.Unquote(string(jsonValue))
 	if err != nil {
+		// If unquoting fails, the format is invalid.
 		return ErrInvalidRuntimeFormat
 	}
 
+	// Split the string into parts based on spaces.
 	parts := strings.Split(unquotedJSONValue, " ")
 
+	// Check if there are exactly two parts and the second part is "mins".
 	if len(parts) != 2 || parts[1] != "mins" {
+		// If not, the format is invalid.
 		return ErrInvalidRuntimeFormat
 	}
 
-	i, err := strconv.ParseInt(parts[1], 10, 32)
+	// Parse the first part as an integer.
+	i, err := strconv.ParseInt(parts[0], 10, 32)
 	if err != nil {
+		// If parsing fails, the format is invalid.
 		return ErrInvalidRuntimeFormat
 	}
 
+	// Assign the parsed integer to the Runtime receiver.
 	*r = Runtime(i)
 
 	return nil
