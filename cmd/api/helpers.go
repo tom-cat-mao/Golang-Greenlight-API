@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/julienschmidt/httprouter"
 )
@@ -68,24 +69,36 @@ func (app *application) writeJSON(w http.ResponseWriter, status int, data envelo
 	return nil
 }
 
-// readJSON decodes the JSON body of a request into a destination struct. It handles common
-// JSON decoding errors and returns appropriate error messages. The function will:
-// - Decode the request body into the destination interface
-// - Handle syntax errors in the JSON body
-// - Catch unexpected EOF errors indicating malformed JSON
-// - Validate proper JSON types for struct fields
-// - Check for empty request bodies
-// - Panic on invalid unmarshal targets (developer error)
+// readJSON decodes the JSON body of an HTTP request into the provided destination struct.
+// It performs comprehensive error handling for various JSON-related issues, including:
+// - Syntax errors in the JSON structure
+// - Malformed JSON (unexpected EOF)
+// - Type mismatches between JSON and struct fields
+// - Unknown fields in the JSON body
+// - Empty request bodies
+// - Request bodies exceeding size limits
+// - Invalid unmarshal targets (developer errors)
+// - Multiple JSON values in request body
+// The function also enforces a maximum body size of 1MB and disallows unknown fields.
 func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	// Decode request body directly into target destination
-	err := json.NewDecoder(r.Body).Decode(dst)
+	// Limit request body size to 1MB to prevent resource exhaustion
+	maxBytes := 1_048_576
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
+
+	// Create JSON decoder and configure to reject unknown fields
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	// Attempt to decode JSON into destination struct
+	err := dec.Decode(dst)
 	if err != nil {
 		// Declare error type pointers for specific error handling
 		var syntaxError *json.SyntaxError
 		var unmarshalTypeError *json.UnmarshalTypeError
 		var invalidUnmarshalError *json.InvalidUnmarshalError
+		var maxBytesError *http.MaxBytesError
 
-		// Handle different types of JSON decoding errors
+		// Handle specific JSON decoding error cases
 		switch {
 		// Syntax error in JSON (e.g., missing comma, incorrect brackets)
 		case errors.As(err, &syntaxError):
@@ -106,6 +119,15 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any
 		case errors.Is(err, io.EOF):
 			return errors.New("body must not be empty")
 
+		// Unknown field in JSON body
+		case strings.HasPrefix(err.Error(), "json:unknown field "):
+			fieldName := strings.TrimPrefix(err.Error(), "json: unknown field ")
+			return fmt.Errorf("body contains unknown key %s", fieldName)
+
+		// Request body exceeds size limit
+		case errors.As(err, &maxBytesError):
+			return fmt.Errorf("body must not be larger than %d bytes", maxBytesError.Limit)
+
 		// Invalid unmarshal target (indicates programmer error)
 		case errors.As(err, &invalidUnmarshalError):
 			panic(err)
@@ -114,6 +136,12 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any
 		default:
 			return err
 		}
+	}
+
+	// Ensure request body contains only a single JSON value
+	err = dec.Decode(&struct{}{})
+	if !errors.Is(err, io.EOF) {
+		return errors.New("body must only contain a single JSON value")
 	}
 
 	// Return nil when decoding is successful
