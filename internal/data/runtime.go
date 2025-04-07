@@ -1,9 +1,15 @@
 package data
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
+
+// ErrInvalidRuntimeFormat is an error variable that indicates when a runtime format is invalid.
+// This error is returned when parsing or processing runtime data in an unexpected format.
+var ErrInvalidRuntimeFormat = errors.New("invalid runtime format")
 
 // Custom Runtime type
 type Runtime int32
@@ -21,4 +27,34 @@ func (r Runtime) MarshalJSON() ([]byte, error) {
 
 	// Convert to byte slice (never returns an error - satisfies json.Marshaler interface)
 	return []byte(quotedJSONValue), nil
+}
+
+// UnmarshalJSON customizes the JSON unmarshaling for Runtime values.
+// It expects a string in the format "X mins" and converts it to an integer.
+// - Unquotes the JSON string to get the raw value.
+// - Splits the string into parts based on spaces.
+// - Validates that there are two parts and the second part is "mins".
+// - Parses the first part as an integer.
+// - Assigns the parsed integer to the Runtime receiver.
+// Returns an error if the format is invalid or parsing fails.
+func (r *Runtime) UnmarshalJSON(jsonValue []byte) error {
+	unquotedJSONValue, err := strconv.Unquote(string(jsonValue))
+	if err != nil {
+		return ErrInvalidRuntimeFormat
+	}
+
+	parts := strings.Split(unquotedJSONValue, " ")
+
+	if len(parts) != 2 || parts[1] != "mins" {
+		return ErrInvalidRuntimeFormat
+	}
+
+	i, err := strconv.ParseInt(parts[1], 10, 32)
+	if err != nil {
+		return ErrInvalidRuntimeFormat
+	}
+
+	*r = Runtime(i)
+
+	return nil
 }
