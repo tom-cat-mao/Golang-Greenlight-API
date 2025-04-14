@@ -17,18 +17,26 @@ import (
 // the current version of the API, which can be useful for debugging and monitoring.
 const version = "1.0.0"
 
-// config holds all the configuration settings for the application. It defines the
-// structure for storing various settings, such as the port, environment, and database
-// connection details.
-//   - port: The port to listen on for incoming HTTP requests.
-//   - env: The operating environment for the application (development, staging, production, etc.).
-//     This setting can be used to conditionally enable or disable certain features.
-//   - db: Database connection settings, including the Data Source Name (DSN).
+// config defines the application's runtime configuration settings.
+// It encapsulates all configurable parameters needed to run the service,
+// including network, environment, and database configurations.
+// Fields:
+//   - port: Network port the HTTP server listens on (e.g. 4000)
+//   - env: Deployment environment ("development", "staging", "production")
+//     Determines operational behaviors like logging verbosity
+//   - db: Database connection pool configuration:
+//   - dsn: Data Source Name for PostgreSQL connection
+//   - maxOpenConns: Maximum number of open connections
+//   - maxIdleConns: Maximum number of idle connections
+//   - maxIdleTime: Maximum duration a connection can remain idle
 type config struct {
 	port int
 	env  string
 	db   struct {
-		dsn string
+		dsn          string
+		maxOpenConns int
+		maxIdleConns int
+		maxIdleTime  time.Duration
 	}
 }
 
@@ -48,15 +56,23 @@ type application struct {
 func main() {
 	var cfg config
 
-	// Define and parse command-line flags. This allows the application to be
-	// configured via command-line arguments, providing flexibility in deployment.
-	//   - port: The port number for the API server to listen on (default: 4000).
-	//   - env: The operating environment (default: "development").
-	//   - db-dsn: The PostgreSQL Data Source Name (DSN) for database connection.
+	// Define and parse command-line flags to configure the application. These flags provide
+	// runtime configuration options that can be set when starting the service.
+	// Available flags:
+	//   - port: HTTP server port (default: 4000)
+	//   - env: Runtime environment ("development", "staging", "production")
+	//   - db-dsn: PostgreSQL connection string (default: GREENLIGHT_DB_DSN env var)
+	//   - db-max-open-conns: Maximum open DB connections (default: 25)
+	//   - db-max-idle-conns: Maximum idle DB connections (default: 25)
+	//   - db-max-idle-time: Maximum idle time for DB connections (default: 15m)
 	flag.IntVar(&cfg.port, "port", 4000, "API server port")
 	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
 	// Add sslmode=disable to the DSN.
 	flag.StringVar(&cfg.db.dsn, "db-dsn", os.Getenv("GREENLIGHT_DB_DSN"), "PostgreSQL DSN")
+
+	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
+	flag.IntVar(&cfg.db.maxIdleConns, "db-max-idle-conns", 25, "PostgreSQL max idle connections")
+	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max connection idle time")
 	flag.Parse()
 
 	// Create a structured logger that writes log entries to standard output.
@@ -109,9 +125,12 @@ func main() {
 	os.Exit(1)
 }
 
-// openDB initializes and returns a database connection pool.
-// It establishes a connection to the PostgreSQL database specified by the DSN in the config.
-// It also performs a health check by pinging the database to ensure the connection is valid.
+// openDB creates and configures a PostgreSQL database connection pool using the provided configuration.
+// It validates the connection by:
+// 1. Opening a connection pool with the configured DSN
+// 2. Setting connection pool parameters (max open/idle connections, idle timeout)
+// 3. Performing a health check via PingContext with a 5-second timeout
+// Returns the initialized pool or an error if any step fails.
 func openDB(cfg config) (*sql.DB, error) {
 	// sql.Open() does not establish any connections to the database.
 	// It only validates the DSN and prepares the database connection pool.
@@ -119,6 +138,18 @@ func openDB(cfg config) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
+
+	// Set the maximum number of open connections to the database.
+	// This limits the total number of connections that can be established.
+	db.SetMaxOpenConns(cfg.db.maxOpenConns)
+
+	// Set the maximum number of idle connections in the pool.
+	// These are connections kept ready for immediate reuse.
+	db.SetMaxIdleConns(cfg.db.maxIdleConns)
+
+	// Set the maximum time an idle connection can remain in the pool before being closed.
+	// This helps prevent stale connections from accumulating.
+	db.SetConnMaxIdleTime(cfg.db.maxIdleTime)
 
 	// Create a context with a 5-second timeout. This ensures that the database ping operation
 	// will not hang indefinitely if the database is unresponsive.
