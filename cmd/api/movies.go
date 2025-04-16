@@ -117,3 +117,80 @@ func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request)
 		app.serverErrorResponse(w, r, err)
 	}
 }
+
+// updateMovieHandler handles PUT/PATCH requests to update a movie record
+// - Extracts and validates the ID parameter from the URL path
+// - Retrieves the existing movie record from the database
+// - Reads and decodes the JSON request body into an input struct
+// - Updates the movie fields with the input values
+// - Validates the updated movie data
+// - Persists the changes to the database
+// - Returns the updated movie as JSON on success
+// - Handles various error cases with appropriate HTTP responses
+func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract the movie ID from the URL and validate it
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	// Retrieve the existing movie record from the database
+	movie, err := app.models.Movies.Get(id)
+	if err != nil {
+		switch {
+		// Return 404 Not Found if the movie doesn't exist
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		// Return 500 Internal Server Error for other database errors
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	// Define an input struct to hold the expected data from the request body
+	var input struct {
+		Title   string       `json:"title"`
+		Year    int32        `json:"year"`
+		Runtime data.Runtime `json:"runtime"`
+		Genres  []string     `json:"genres"`
+	}
+
+	// Read and decode the JSON request body into the input struct
+	err = app.readJSON(w, r, &input)
+	if err != nil {
+		// Return 400 Bad Request if the JSON is malformed
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	// Update the movie fields with the values from the input
+	movie.Title = input.Title
+	movie.Year = input.Year
+	movie.Runtime = input.Runtime
+	movie.Genres = input.Genres
+
+	// Initialize a new validator and validate the updated movie
+	v := validator.New()
+	if data.ValidateMovie(v, movie); !v.Valid() {
+		// Return 422 Unprocessable Entity if validation fails
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	// Update the movie record in the database
+	err = app.models.Movies.Update(*movie)
+	if err != nil {
+		// Return 500 Internal Server Error if the update fails
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// Write the updated movie as JSON response with 200 OK status
+	err = app.writeJSON(w, http.StatusOK, envelope{"movie": movie}, nil)
+	if err != nil {
+		// Return 500 Internal Server Error if JSON encoding fails
+		app.serverErrorResponse(w, r, err)
+	}
+}

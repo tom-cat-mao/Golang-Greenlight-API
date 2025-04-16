@@ -132,8 +132,41 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	return &movie, nil
 }
 
+// Update modifies an existing movie record in the database.
+// It updates all fields of the movie and increments the version number for optimistic concurrency control.
+// Returns:
+//   - error: Any error that occurs during the operation, including:
+//   - Database errors for connection/query failures
+//   - ErrRecordNotFound if no rows were affected (though this would be unusual with proper ID)
 func (m MovieModel) Update(movie Movie) error {
-	return nil
+	// Define the SQL query to update a movie record
+	// The query:
+	// - Updates all movie fields
+	// - Increments the version number atomically
+	// - Uses the ID in the WHERE clause to target the specific record
+	// - Returns the new version number via RETURNING clause
+	query := `
+		UPDATE movies
+		SET title = $1, year = $2, runtime = $3, genres = $4, version = version + 1
+		WHERE id = $5
+		RETURNING version
+		`
+
+	// Prepare the arguments for the query in the correct order
+	// Note: pq.Array() is used to properly handle the PostgreSQL array type for genres
+	args := []any{
+		movie.Title,
+		movie.Year,
+		movie.Runtime,
+		pq.Array(movie.Genres),
+		movie.ID,
+	}
+
+	// Execute the query:
+	// - QueryRow executes the query and expects at most one row in return
+	// - Scan stores the returned version number into the movie struct
+	// - Any error during execution or scanning will be returned
+	return m.DB.QueryRow(query, args...).Scan(&movie.Version)
 }
 
 func (m MovieModel) Delete(id int64) error {
