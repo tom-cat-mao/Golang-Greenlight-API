@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"greenlight.tomcat.net/internal/data"
 )
 
 // version represents the application version number. This constant is used to track
@@ -40,14 +41,17 @@ type config struct {
 	}
 }
 
-// application holds the dependencies for our HTTP handlers, helpers, and middleware.
-// This struct is used to group all the application-level dependencies together,
-// making them easily accessible to all parts of the application.
-//   - config: The application configuration settings.
-//   - logger: The structured logger for recording application events and errors.
+// application represents the core dependencies used throughout the application.
+// This struct serves as a centralized container for all application-level components,
+// providing easy access to shared resources across handlers, helpers, and middleware.
+// Fields:
+//   - config: Runtime configuration settings (port, environment, database, etc.)
+//   - logger: Structured logger for application events and error reporting
+//   - models: Database access layer containing all data operations
 type application struct {
 	config config
 	logger *slog.Logger
+	models data.Models
 }
 
 // main is the entry point of the application. It initializes the application,
@@ -102,6 +106,7 @@ func main() {
 	app := &application{
 		config: cfg,
 		logger: logger,
+		models: data.NewModels(db),
 	}
 
 	// Configure the HTTP server. This sets up the server's address, handler,
