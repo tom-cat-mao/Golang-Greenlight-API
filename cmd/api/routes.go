@@ -41,6 +41,11 @@ func (app *application) routes() http.Handler {
 	// Uses optimistic concurrency control via version number
 	router.HandlerFunc(http.MethodPut, "/v1/movies/:id", app.updateMovieHandler)
 
+	// DELETE /v1/movies/:id - Deletes a movie by its ID
+	// Expects a valid movie ID in the URL path
+	// Returns 404 if the movie does not exist, or 200 with a success message if deleted
+	router.HandlerFunc(http.MethodDelete, "/v1/movies/:id", app.deleteMovieHandler)
+
 	// Wrap the router with the recoverPanic middleware which:
 	// - Catches any panics that occur during request handling
 	// - Returns a 500 Internal Server Error response

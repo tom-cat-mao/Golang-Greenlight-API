@@ -194,3 +194,37 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 		app.serverErrorResponse(w, r, err)
 	}
 }
+
+// deleteMovieHandler handles HTTP DELETE requests to remove a movie by its ID.
+// It expects the movie ID as a URL parameter, deletes the movie from the database,
+// and returns a confirmation message if successful.
+func (app *application) deleteMovieHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract the movie ID from the URL parameter.
+	id, err := app.readIDParam(r)
+	if err != nil {
+		// If the ID is invalid or missing, respond with 404 Not Found.
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	// Attempt to delete the movie from the database.
+	err = app.models.Movies.Delete(id)
+	if err != nil {
+		switch {
+		// If the movie does not exist, respond with 404 Not Found.
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		// For any other error, respond with 500 Internal Server Error.
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	// If deletion is successful, return a JSON response with a success message.
+	err = app.writeJSON(w, http.StatusOK, envelope{"message": "movie successfully deleted"}, nil)
+	if err != nil {
+		// If there is an error encoding the JSON response, return a 500 error.
+		app.serverErrorResponse(w, r, err)
+	}
+}
