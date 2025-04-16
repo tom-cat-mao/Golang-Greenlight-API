@@ -1,9 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"greenlight.tomcat.net/internal/data"
 	"greenlight.tomcat.net/internal/validator"
@@ -75,10 +75,15 @@ func (app *application) createMovieHandler(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// showMovieHandler handles GET requests to retrieve a movie by ID at /v1/movies/:id
-// - Parses and validates the :id parameter from the URL path
-// - Returns a JSON response containing mock movie data for demonstration purposes
-// - Uses writeJSON helper for consistent response formatting and error handling
+// showMovieHandler handles GET requests to retrieve a movie by ID from the database
+// - Extracts and validates the ID parameter from the URL path
+// - Retrieves the movie record from the database using the MovieModel
+// - Handles various error cases:
+//   - Invalid ID format (404 Not Found)
+//   - Non-existent movie (404 Not Found)
+//   - Database errors (500 Internal Server Error)
+//
+// - Returns a JSON response with the movie data on success
 func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the value of the "id" parameters from the slice.
 	id, err := app.readIDParam(r)
@@ -87,16 +92,28 @@ func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	movie := data.Movie{
-		ID:        id,
-		CreatedAt: time.Now(),
-		Title:     "Casablanca",
-		Runtime:   102,
-		Genres:    []string{"drama", "romance", "war"},
-		Version:   1,
+	// Retrieve the movie from the database using the provided ID
+	movie, err := app.models.Movies.Get(id)
+	if err != nil {
+		switch {
+		// If the error is ErrRecordNotFound, return a 404 Not Found response
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		// For all other errors, return a 500 Internal Server Error response
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		// Return early since we encountered an error
+		return
 	}
+
+	// Write the JSON response with:
+	// - HTTP status code 200 (OK)
+	// - The movie data wrapped in an envelope
+	// - No additional headers (nil)
 	err = app.writeJSON(w, http.StatusOK, envelope{"movie": movie}, nil)
 	if err != nil {
+		// If JSON encoding fails, respond with a 500 Internal Server Error
 		app.serverErrorResponse(w, r, err)
 	}
 }
