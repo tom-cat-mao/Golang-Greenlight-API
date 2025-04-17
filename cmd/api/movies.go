@@ -118,15 +118,21 @@ func (app *application) showMovieHandler(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// updateMovieHandler handles PUT/PATCH requests to update a movie record
-// - Extracts and validates the ID parameter from the URL path
-// - Retrieves the existing movie record from the database
-// - Reads and decodes the JSON request body into an input struct
-// - Updates the movie fields with the input values
-// - Validates the updated movie data
-// - Persists the changes to the database
-// - Returns the updated movie as JSON on success
-// - Handles various error cases with appropriate HTTP responses
+// updateMovieHandler handles HTTP PUT/PATCH requests to update an existing movie record.
+// The handler performs the following operations:
+//  1. Extracts and validates the movie ID from the URL path parameters
+//  2. Retrieves the existing movie record from the database
+//  3. Reads and decodes the JSON request body into a partial update struct
+//  4. Conditionally updates movie fields with non-nil values from the input
+//  5. Validates the updated movie data using the validator
+//  6. Persists the changes to the database
+//  7. Returns the updated movie data as JSON with 200 OK status
+//
+// Error handling includes:
+//   - 404 Not Found for invalid/missing IDs or non-existent movies
+//   - 400 Bad Request for malformed JSON
+//   - 422 Unprocessable Entity for validation failures
+//   - 500 Internal Server Error for database/processing failures
 func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Request) {
 	// Extract the movie ID from the URL and validate it
 	id, err := app.readIDParam(r)
@@ -151,10 +157,10 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 
 	// Define an input struct to hold the expected data from the request body
 	var input struct {
-		Title   string       `json:"title"`
-		Year    int32        `json:"year"`
-		Runtime data.Runtime `json:"runtime"`
-		Genres  []string     `json:"genres"`
+		Title   *string       `json:"title"`
+		Year    *int32        `json:"year"`
+		Runtime *data.Runtime `json:"runtime"`
+		Genres  []string      `json:"genres"`
 	}
 
 	// Read and decode the JSON request body into the input struct
@@ -165,11 +171,21 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Update the movie fields with the values from the input
-	movie.Title = input.Title
-	movie.Year = input.Year
-	movie.Runtime = input.Runtime
-	movie.Genres = input.Genres
+	if input.Title != nil {
+		movie.Title = *input.Title
+	}
+
+	if input.Year != nil {
+		movie.Year = *input.Year
+	}
+
+	if input.Runtime != nil {
+		movie.Runtime = *input.Runtime
+	}
+
+	if input.Genres != nil {
+		movie.Genres = input.Genres
+	}
 
 	// Initialize a new validator and validate the updated movie
 	v := validator.New()
@@ -179,11 +195,20 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Update the movie record in the database
+	// Attempt to update the movie record in the database
 	err = app.models.Movies.Update(*movie)
 	if err != nil {
-		// Return 500 Internal Server Error if the update fails
-		app.serverErrorResponse(w, r, err)
+		switch {
+		// If we get an edit conflict error (version mismatch), return a 409 Conflict response
+		// This indicates the record was modified by another process since we fetched it
+		case errors.Is(err, data.ErrEditConflict):
+			app.editConflictResponse(w, r)
+		// For all other database errors, return a 500 Internal Server Error
+		// This includes connection issues, query errors, etc.
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		// Return early since we encountered an error
 		return
 	}
 

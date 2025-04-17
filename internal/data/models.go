@@ -5,10 +5,14 @@ import (
 	"errors"
 )
 
-// ErrRecordNotFound is a sentinel error that indicates a requested database record
-// could not be found. This error should be returned by data access methods when
-// a query yields no results, allowing calling code to explicitly handle this case.
-var ErrRecordNotFound = errors.New("record not found")
+// ErrRecordNotFound is a sentinel error returned when a database query returns no rows.
+// It enables explicit handling of "not found" cases in calling code, typically resulting
+// in a 404 Not Found HTTP response in API handlers. This error should be used consistently
+// across all data access methods to maintain uniform error handling behavior.
+var (
+	ErrRecordNotFound = errors.New("record not found")
+	ErrEditConflict   = errors.New("edit conflict")
+)
 
 // Models wraps all database model types in a single struct.
 // This provides a convenient way to access all data operations

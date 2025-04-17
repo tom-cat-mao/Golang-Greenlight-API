@@ -132,23 +132,27 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	return &movie, nil
 }
 
-// Update modifies an existing movie record in the database.
-// It updates all fields of the movie and increments the version number for optimistic concurrency control.
+// Update modifies an existing movie record in the database using optimistic concurrency control.
+// It performs an atomic update of all movie fields and increments the version number to prevent race conditions.
+// The update will only succeed if the movie's current version matches the expected version.
 // Returns:
 //   - error: Any error that occurs during the operation, including:
+//   - ErrEditConflict if the version check fails (indicating concurrent modification)
 //   - Database errors for connection/query failures
-//   - ErrRecordNotFound if no rows were affected (though this would be unusual with proper ID)
+//   - sql.ErrNoRows if no record was found (though this is converted to ErrEditConflict)
 func (m MovieModel) Update(movie Movie) error {
-	// Define the SQL query to update a movie record
-	// The query:
-	// - Updates all movie fields
-	// - Increments the version number atomically
-	// - Uses the ID in the WHERE clause to target the specific record
-	// - Returns the new version number via RETURNING clause
+	// Define the SQL query for updating a movie record with optimistic concurrency control.
+	// The query performs an atomic update that:
+	// - Sets all movie fields (title, year, runtime, genres)
+	// - Increments the version number to prevent race conditions
+	// - Uses both ID and current version in WHERE clause to ensure:
+	//   * The correct record is targeted (by ID)
+	//   * The record hasn't been modified since it was fetched (by version)
+	// - Returns the new version number via RETURNING clause for verification
 	query := `
 		UPDATE movies
 		SET title = $1, year = $2, runtime = $3, genres = $4, version = version + 1
-		WHERE id = $5
+		WHERE id = $5 AND version = $6
 		RETURNING version
 		`
 
@@ -160,13 +164,24 @@ func (m MovieModel) Update(movie Movie) error {
 		movie.Runtime,
 		pq.Array(movie.Genres),
 		movie.ID,
+		movie.Version,
 	}
 
-	// Execute the query:
-	// - QueryRow executes the query and expects at most one row in return
-	// - Scan stores the returned version number into the movie struct
-	// - Any error during execution or scanning will be returned
-	return m.DB.QueryRow(query, args...).Scan(&movie.Version)
+	// Execute the SQL query to update the movie record and scan the new version number
+	err := m.DB.QueryRow(query, args...).Scan(&movie.Version)
+	if err != nil {
+		switch {
+		// If no rows were affected, it means the version check failed (concurrent modification)
+		// Return our custom ErrEditConflict to indicate an optimistic concurrency control violation
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrEditConflict
+		// For all other database errors, return them directly
+		default:
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (m MovieModel) Delete(id int64) error {
