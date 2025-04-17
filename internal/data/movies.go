@@ -96,7 +96,7 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	// Define the SQL query to select a movie by ID
 	// The query retrieves all movie fields from the database
 	query := `
-		SELECT id, created_at, title, year, runtime, genres, version
+		SELECT pg_sleep(8), id, created_at, title, year, runtime, genres, version
 		FROM movies
 		WHERE id = $1
 		`
@@ -107,6 +107,7 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	// Execute the query and scan the result into the movie struct
 	// Note: pq.Array() is used to properly scan the PostgreSQL array into a Go slice
 	err := m.DB.QueryRow(query, id).Scan(
+		&[]byte{},
 		&movie.ID,
 		&movie.CreatedAt,
 		&movie.Title,
