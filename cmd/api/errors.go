@@ -109,3 +109,18 @@ func (app *application) failedValidationResponse(w http.ResponseWriter, r *http.
 	// with a 422 status code and the validation errors.
 	app.errorResponse(w, r, http.StatusUnprocessableEntity, errors)
 }
+
+// editConflictResponse sends a JSON-formatted 409 Conflict response to the client.
+// It's used when an optimistic concurrency control check fails during a record update,
+// indicating the record was modified by another process since it was fetched.
+// Parameters:
+//   - w: http.ResponseWriter to write the HTTP response
+//   - r: *http.Request to extract request context for logging
+func (app *application) editConflictResponse(w http.ResponseWriter, r *http.Request) {
+	// Define a user-friendly error message explaining the edit conflict
+	message := "unable to update the record due to an edit conflict, please try again"
+
+	// Use the application's errorResponse helper to send the JSON response
+	// with HTTP 409 Conflict status code and the error message
+	app.errorResponse(w, r, http.StatusConflict, message)
+}

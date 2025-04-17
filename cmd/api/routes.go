@@ -36,10 +36,10 @@ func (app *application) routes() http.Handler {
 	// Returns 404 if movie doesn't exist or ID is invalid
 	router.HandlerFunc(http.MethodGet, "/v1/movies/:id", app.showMovieHandler)
 
-	// PUT /v1/movies/:id - Fully updates an existing movie record
-	// Requires all movie fields in request body
-	// Uses optimistic concurrency control via version number
-	router.HandlerFunc(http.MethodPut, "/v1/movies/:id", app.updateMovieHandler)
+	// PATCH /v1/movies/:id - Partially updates an existing movie record
+	// Accepts partial updates - only fields provided in request body will be updated
+	// Validates input data and returns appropriate error responses
+	router.HandlerFunc(http.MethodPatch, "/v1/movies/:id", app.updateMovieHandler)
 
 	// DELETE /v1/movies/:id - Deletes a movie by its ID
 	// Expects a valid movie ID in the URL path
