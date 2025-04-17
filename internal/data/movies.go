@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -73,9 +74,15 @@ func (m MovieModel) Insert(movie *Movie) error {
 	// Prepare the arguments for the query, converting the genres slice to a PostgreSQL array
 	args := []any{movie.Title, movie.Year, movie.Runtime, pq.Array(movie.Genres)}
 
-	// Execute the query and scan the returned values into the movie struct
-	// This populates the ID, CreatedAt, and Version fields of the movie
-	return m.DB.QueryRow(query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
+	// Create a context with a 3-second timeout to ensure the database operation does not hang indefinitely.
+	// The cancel function should be called to release resources once the operation completes.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel() // Ensure the context is cancelled to avoid resource leaks.
+
+	// Execute the SQL insert statement and scan the generated ID, creation timestamp,
+	// and version number into the corresponding fields of the provided movie struct.
+	// This ensures the movie struct is updated with the database-generated values.
+	return m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
 }
 
 // Get retrieves a movie record from the database by its ID.
@@ -96,7 +103,7 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	// Define the SQL query to select a movie by ID
 	// The query retrieves all movie fields from the database
 	query := `
-		SELECT pg_sleep(8), id, created_at, title, year, runtime, genres, version
+		SELECT id, created_at, title, year, runtime, genres, version
 		FROM movies
 		WHERE id = $1
 		`
@@ -104,10 +111,14 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	// Initialize an empty Movie struct to hold the retrieved data
 	var movie Movie
 
-	// Execute the query and scan the result into the movie struct
-	// Note: pq.Array() is used to properly scan the PostgreSQL array into a Go slice
-	err := m.DB.QueryRow(query, id).Scan(
-		&[]byte{},
+	// Create a context with a 3-second timeout to ensure the database query does not hang indefinitely.
+	// The cancel function should be called to release resources once the operation completes.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel() // Ensure the context is cancelled to avoid resource leaks.
+
+	// Execute the SQL query with a context timeout and scan the result into the movie struct fields.
+	// pq.Array is used to convert the PostgreSQL genres array into a Go slice.
+	err := m.DB.QueryRowContext(ctx, query, id).Scan(
 		&movie.ID,
 		&movie.CreatedAt,
 		&movie.Title,
@@ -168,16 +179,23 @@ func (m MovieModel) Update(movie Movie) error {
 		movie.Version,
 	}
 
-	// Execute the SQL query to update the movie record and scan the new version number
-	err := m.DB.QueryRow(query, args...).Scan(&movie.Version)
+	// Create a context with a 3-second timeout to ensure the update operation does not hang indefinitely.
+	// The cancel function should be called to release resources once the operation completes.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel() // Ensure the context is cancelled to avoid resource leaks.
+
+	// Execute the update query and attempt to scan the new version number into the movie struct.
+	// If the update fails due to a version mismatch (i.e., another process has modified the record),
+	// the query will return sql.ErrNoRows, which we translate to ErrEditConflict to signal a concurrency conflict.
+	// Any other error is returned as-is.
+	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.Version)
 	if err != nil {
 		switch {
-		// If no rows were affected, it means the version check failed (concurrent modification)
-		// Return our custom ErrEditConflict to indicate an optimistic concurrency control violation
 		case errors.Is(err, sql.ErrNoRows):
+			// No rows updated: the record was changed by another process or does not exist.
 			return ErrEditConflict
-		// For all other database errors, return them directly
 		default:
+			// Return any other database error encountered.
 			return err
 		}
 	}
@@ -201,10 +219,15 @@ func (m MovieModel) Delete(id int64) error {
 		WHERE id = $1
 		`
 
-	// Execute the delete statement
-	result, err := m.DB.Exec(query, id)
+	// Create a context with a 3-second timeout to ensure the delete operation does not hang indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Ensure the context is cancelled to free up resources once the operation completes.
+	defer cancel()
+
+	// Execute the SQL DELETE statement to remove the movie with the specified ID.
+	result, err := m.DB.ExecContext(ctx, query, id)
 	if err != nil {
-		// Return any error encountered during execution
+		// If an error occurs during the execution of the DELETE statement, return it.
 		return err
 	}
 
