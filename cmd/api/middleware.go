@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"sync"
+	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -34,22 +37,69 @@ func (app *application) recoverPanic(next http.Handler) http.Handler {
 	})
 }
 
-// rateLimit is a middleware that applies a global rate limit to all incoming HTTP requests.
-// It uses a token bucket algorithm (from golang.org/x/time/rate) to allow up to 2 requests per second
-// with a maximum burst of 4 requests. If the rate limit is exceeded, it responds with a 429 Too Many Requests error.
+// rateLimit is a middleware that implements rate limiting for incoming requests.
+// It maintains a map of client IP addresses to track request rates and enforces
+// a limit of 2 requests per second with a burst capacity of 4 requests.
 func (app *application) rateLimit(next http.Handler) http.Handler {
-	// Create a new rate limiter allowing 2 requests per second with a burst of 4.
-	limiter := rate.NewLimiter(2, 4)
+	// client represents a rate-limited client with their limiter and last seen timestamp
+	type client struct {
+		limiter  *rate.Limiter // Token bucket rate limiter for this client
+		lastSeen time.Time     // Last time this client made a request
+	}
+
+	var (
+		mu      sync.Mutex                 // Mutex to protect concurrent access to the clients map
+		clients = make(map[string]*client) // Map of client IPs to their rate limiting data
+	)
+
+	// Start a background goroutine to clean up old client entries
+	go func() {
+		// Run cleanup every minute
+		for {
+			time.Sleep(time.Minute)
+
+			mu.Lock() // Lock the mutex for map access
+
+			// Remove clients that haven't been seen in the last 3 minutes
+			for ip, client := range clients {
+				if time.Since(client.lastSeen) > 3*time.Minute {
+					delete(clients, ip)
+				}
+			}
+
+			mu.Unlock() // Unlock when done
+		}
+	}()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check if a request is allowed by the rate limiter.
-		if !limiter.Allow() {
-			// If not allowed, send a 429 Too Many Requests response and return early.
+		// Extract the client IP from the request
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+			return
+		}
+
+		mu.Lock() // Lock for client map access
+
+		// Create a new rate limiter for new clients
+		if _, found := clients[ip]; !found {
+			// 2 requests per second with a burst of 4
+			clients[ip] = &client{limiter: rate.NewLimiter(2, 4)}
+		}
+
+		// Update the last seen time for this client
+		clients[ip].lastSeen = time.Now()
+
+		// Check if request is allowed by rate limiter
+		if !clients[ip].limiter.Allow() {
+			mu.Unlock() // Unlock before returning
 			app.rateLimitExceededResponse(w, r)
 			return
 		}
 
-		// If allowed, call the next handler in the chain.
+		mu.Unlock() // Unlock when done
+
+		// If rate limit not exceeded, call the next handler
 		next.ServeHTTP(w, r)
 	})
 }
