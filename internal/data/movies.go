@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/lib/pq"
@@ -257,18 +258,20 @@ func (m MovieModel) Delete(id int64) error {
 //   - A slice of pointers to Movie structs representing the retrieved movies
 //   - An error if any occurs during the query or scanning process
 func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, error) {
-	// Build the SQL query for retrieving movies.
-	// - Filters by title using full-text search (if title is not empty).
-	// - Filters by genres using the @> operator (if genres slice is not empty).
-	// - Orders the results by id.
-	query := `
-			SELECT id, created_at, title, year, runtime, genres, version
-			FROM movies
-			WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
-			AND (genres @> $2 OR $2 = '{}')
-			ORDER BY id
-	`
-
+	// Build the SQL query for retrieving movies with optional filtering and sorting.
+	// - The WHERE clause filters by title using full-text search if a title is provided,
+	//   or matches all titles if the title filter is empty.
+	// - The genres filter uses the @> operator to check if the movie's genres array contains all genres in the filter,
+	//   or matches all movies if the genres filter is empty.
+	// - The ORDER BY clause sorts the results by the requested column and direction,
+	//   and always includes id ASC as a secondary sort to ensure deterministic ordering.
+	query := fmt.Sprintf(`
+		SELECT id, created_at, title, year, runtime, genres, version
+		FROM movies
+		WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
+		AND (genres @> $2 OR $2 = '{}')
+		ORDER BY %s %s, id ASC
+		`, filters.sortColumn(), filters.sortDirection())
 	// Create a context with a 3-second timeout to avoid hanging queries.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

@@ -1,6 +1,10 @@
 package data
 
-import "greenlight.tomcat.net/internal/validator"
+import (
+	"strings"
+
+	"greenlight.tomcat.net/internal/validator"
+)
 
 // Filters defines the parameters for paginating and sorting query results.
 // It is used to control which page of results to return, how many results per page,
@@ -10,6 +14,31 @@ type Filters struct {
 	PageSize     int      // The maximum number of items to return per page.
 	Sort         string   // The column or field to sort by (e.g., "id", "title", "-year").
 	SortSafelist []string // List of permitted sort values to prevent unsafe input.
+}
+
+// sortColumn returns the column name to use for sorting, after validating that the requested sort value
+// is present in the SortSafelist. If the sort value is not permitted, it panics to prevent unsafe SQL injection.
+func (f Filters) sortColumn() string {
+	// Iterate through the safelist of permitted sort values.
+	for _, safeValue := range f.SortSafelist {
+		// If the requested sort value matches a permitted value,
+		// return the column name with any leading '-' (for descending order) removed.
+		if f.Sort == safeValue {
+			return strings.TrimPrefix(f.Sort, "-")
+		}
+	}
+	// Panic if the sort value is not in the safelist, indicating an unsafe or invalid sort parameter.
+	panic("unsafe sort parameter: " + f.Sort)
+}
+
+// sortDirection returns the SQL sort direction ("ASC" or "DESC") based on the Filters.Sort value.
+// If the sort value starts with a '-', it indicates descending order ("DESC").
+// Otherwise, it defaults to ascending order ("ASC").
+func (f Filters) sortDirection() string {
+	if strings.HasPrefix(f.Sort, "-") {
+		return "DESC"
+	}
+	return "ASC"
 }
 
 // ValidateFilters checks the Filters struct fields for valid values and records any validation errors.
