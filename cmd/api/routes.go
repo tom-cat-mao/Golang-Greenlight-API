@@ -51,9 +51,9 @@ func (app *application) routes() http.Handler {
 	// Returns 404 if the movie does not exist, or 200 with a success message if deleted
 	router.HandlerFunc(http.MethodDelete, "/v1/movies/:id", app.deleteMovieHandler)
 
-	// Wrap the router with the recoverPanic middleware which:
-	// - Catches any panics that occur during request handling
-	// - Returns a 500 Internal Server Error response
-	// - Logs the error details for debugging
-	return app.recoverPanic(router)
+	// Wrap the router with the rate limiting middleware to control request rate,
+	// then wrap with the panic recovery middleware to gracefully handle panics.
+	// This ensures all requests are subject to rate limiting and that any panics
+	// are caught and handled with a proper error response.
+	return app.recoverPanic(app.rateLimit(router))
 }

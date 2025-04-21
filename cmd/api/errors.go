@@ -124,3 +124,16 @@ func (app *application) editConflictResponse(w http.ResponseWriter, r *http.Requ
 	// with HTTP 409 Conflict status code and the error message
 	app.errorResponse(w, r, http.StatusConflict, message)
 }
+
+// rateLimitExceededResponse sends a JSON-formatted 429 Too Many Requests response to the client.
+// This is used when the client has exceeded the allowed rate limit for requests.
+// Parameters:
+//   - w: http.ResponseWriter to write the HTTP response.
+//   - r: *http.Request to extract request context for logging.
+func (app *application) rateLimitExceededResponse(w http.ResponseWriter, r *http.Request) {
+	// Define a user-friendly error message indicating the rate limit has been exceeded.
+	message := "rate limit exceeded"
+	// Use the application's errorResponse helper to send the JSON response
+	// with HTTP 429 Too Many Requests status code and the error message.
+	app.errorResponse(w, r, http.StatusTooManyRequests, message)
+}
