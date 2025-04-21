@@ -283,8 +283,12 @@ func (app *application) listMoviesHandler(w http.ResponseWriter, r *http.Request
 	// Read the "sort" query parameter, defaulting to "id" if not provided.
 	input.Sort = app.readString(qs, "sort", "id")
 
-	// If there are any validation errors, return a 422 Unprocessable Entity response.
-	if !v.Valid() {
+	// Define the list of permitted sort values to prevent unsafe or invalid sort input.
+	input.SortSafelist = []string{"id", "title", "year", "runtime", "-id", "-title", "-year", "-runtime"}
+
+	// Validate the filter parameters (page, page_size, sort) using the ValidateFilters function.
+	// If any validation errors are present, send a 422 Unprocessable Entity response with the errors and return early.
+	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
