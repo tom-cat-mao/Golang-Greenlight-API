@@ -257,11 +257,15 @@ func (m MovieModel) Delete(id int64) error {
 //   - A slice of pointers to Movie structs representing the retrieved movies
 //   - An error if any occurs during the query or scanning process
 func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, error) {
-	// SQL query to select all movies, ordered by id.
-	// (Filtering and pagination not yet implemented in this version.)
+	// Build the SQL query to select movies from the database.
+	// - Filters by title if a non-empty title is provided (case-insensitive).
+	// - Filters by genres if a non-empty genres slice is provided.
+	// - Orders the results by the movie ID.
 	query := `
 			SELECT id, created_at, title, year, runtime, genres, version
 			FROM movies
+			WHERE (LOWER(title) = LOWER($1) OR $1 = '')
+			AND (genres @> $2 OR $2 = '{}')
 			ORDER BY id
 	`
 
@@ -269,12 +273,13 @@ func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*M
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	// Execute the query and obtain the result set.
-	rows, err := m.DB.QueryContext(ctx, query)
+	// Execute the SQL query with the provided title and genres filters.
+	rows, err := m.DB.QueryContext(ctx, query, title, pq.Array(genres))
 	if err != nil {
+		// If an error occurs while querying the database, return the error and no results.
 		return nil, err
 	}
-	// Ensure the rows are closed after processing.
+	// Defer closing the rows to ensure resources are released after processing.
 	defer rows.Close()
 
 	// Prepare a slice to hold the resulting movies.
