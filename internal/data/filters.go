@@ -54,3 +54,16 @@ func ValidateFilters(v *validator.Validator, f Filters) {
 	// Check that the sort value is in the permitted safelist.
 	v.Check(validator.PermittedValue(f.Sort, f.SortSafelist...), "sort", "invalid sort value")
 }
+
+// limit returns the maximum number of items to retrieve per page for pagination.
+// It simply returns the PageSize field from the Filters struct.
+func (f Filters) limit() int {
+	return f.PageSize
+}
+
+// offset returns the number of items to skip for pagination based on the current page and page size.
+// It calculates the offset as (Page - 1) * PageSize, which is used in SQL queries to determine
+// where to start returning results for the requested page.
+func (f Filters) offset() int {
+	return (f.Page - 1) * f.PageSize
+}

@@ -258,31 +258,37 @@ func (m MovieModel) Delete(id int64) error {
 //   - A slice of pointers to Movie structs representing the retrieved movies
 //   - An error if any occurs during the query or scanning process
 func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, error) {
-	// Build the SQL query for retrieving movies with optional filtering and sorting.
-	// - The WHERE clause filters by title using full-text search if a title is provided,
-	//   or matches all titles if the title filter is empty.
-	// - The genres filter uses the @> operator to check if the movie's genres array contains all genres in the filter,
-	//   or matches all movies if the genres filter is empty.
-	// - The ORDER BY clause sorts the results by the requested column and direction,
-	//   and always includes id ASC as a secondary sort to ensure deterministic ordering.
+	// Build the SQL query for retrieving movies with optional filtering, sorting, and pagination.
+	// - The WHERE clause filters by title using full-text search (if a title is provided), or matches all if empty.
+	// - The genres filter uses the @> operator to check if the movie's genres array contains all specified genres, or matches all if the genres slice is empty.
+	// - The ORDER BY clause uses dynamic column and direction from the Filters struct, and always sorts by id as a secondary key for deterministic ordering.
+	// - LIMIT and OFFSET are used for pagination.
 	query := fmt.Sprintf(`
 		SELECT id, created_at, title, year, runtime, genres, version
 		FROM movies
 		WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
 		AND (genres @> $2 OR $2 = '{}')
 		ORDER BY %s %s, id ASC
+		LIMIT $3 OFFSET $4
 		`, filters.sortColumn(), filters.sortDirection())
 	// Create a context with a 3-second timeout to avoid hanging queries.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	// Execute the SQL query with the provided title and genres filters.
-	rows, err := m.DB.QueryContext(ctx, query, title, pq.Array(genres))
+	// Prepare the arguments for the SQL query:
+	// - $1: title filter for full-text search (empty string means no filtering)
+	// - $2: genres filter as a Postgres array (empty array means no filtering)
+	// - $3: limit for pagination (maximum number of results per page)
+	// - $4: offset for pagination (number of results to skip)
+	args := []any{title, pq.Array(genres), filters.limit(), filters.offset()}
+
+	// Execute the SQL query using the constructed query string and arguments for filtering, sorting, and pagination.
+	rows, err := m.DB.QueryContext(ctx, query, args...)
 	if err != nil {
-		// If an error occurs while querying the database, return the error and no results.
+		// Return any error encountered during query execution.
 		return nil, err
 	}
-	// Defer closing the rows to ensure resources are released after processing.
+	// Ensure the rows are closed after processing to free up database resources.
 	defer rows.Close()
 
 	// Prepare a slice to hold the resulting movies.
