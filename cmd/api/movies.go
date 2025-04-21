@@ -293,6 +293,18 @@ func (app *application) listMoviesHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// For now, just print the parsed input struct for debugging.
-	fmt.Fprintf(w, "%+v\n", input)
+	// Retrieve the list of movies from the database using the provided filters (title, genres, pagination, and sorting).
+	movies, err := app.models.Movies.GetAll(input.Title, input.Genres, input.Filters)
+	if err != nil {
+		// If an error occurs while fetching movies, return a 500 Internal Server Error response.
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// Write the list of movies as a JSON response with HTTP 200 OK status.
+	err = app.writeJSON(w, http.StatusOK, envelope{"movies": movies}, nil)
+	if err != nil {
+		// If an error occurs while writing the JSON response, send a 500 Internal Server Error response.
+		app.serverErrorResponse(w, r, err)
+	}
 }

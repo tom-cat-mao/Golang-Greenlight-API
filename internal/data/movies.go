@@ -127,7 +127,6 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 		pq.Array(&movie.Genres),
 		&movie.Version,
 	)
-
 	// Handle any errors that occurred during the query execution
 	if err != nil {
 		switch {
@@ -245,4 +244,69 @@ func (m MovieModel) Delete(id int64) error {
 
 	// Successful deletion
 	return nil
+}
+
+// GetAll retrieves a list of movies from the database, optionally filtered by title and genres,
+// and paginated/sorted according to the provided Filters struct.
+// Parameters:
+//   - title:   Filter movies by title (empty string means no filtering by title)
+//   - genres:  Filter movies by genres (empty slice means no filtering by genres)
+//   - filters: Pagination and sorting options (page, page_size, sort, etc.)
+//
+// Returns:
+//   - A slice of pointers to Movie structs representing the retrieved movies
+//   - An error if any occurs during the query or scanning process
+func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, error) {
+	// SQL query to select all movies, ordered by id.
+	// (Filtering and pagination not yet implemented in this version.)
+	query := `
+			SELECT id, created_at, title, year, runtime, genres, version
+			FROM movies
+			ORDER BY id
+	`
+
+	// Create a context with a 3-second timeout to avoid hanging queries.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Execute the query and obtain the result set.
+	rows, err := m.DB.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	// Ensure the rows are closed after processing.
+	defer rows.Close()
+
+	// Prepare a slice to hold the resulting movies.
+	movies := []*Movie{}
+
+	// Iterate over the rows in the result set.
+	for rows.Next() {
+		var movie Movie
+
+		// Scan the current row into the movie struct.
+		err := rows.Scan(
+			&movie.ID,
+			&movie.CreatedAt,
+			&movie.Title,
+			&movie.Year,
+			&movie.Runtime,
+			pq.Array(&movie.Genres),
+			&movie.Version,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Append the movie to the result slice.
+		movies = append(movies, &movie)
+	}
+
+	// Check for any errors encountered during iteration.
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Return the slice of movies and nil error.
+	return movies, nil
 }
