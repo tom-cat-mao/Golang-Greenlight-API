@@ -257,14 +257,14 @@ func (m MovieModel) Delete(id int64) error {
 //   - A slice of pointers to Movie structs representing the retrieved movies
 //   - An error if any occurs during the query or scanning process
 func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, error) {
-	// Build the SQL query to select movies from the database.
-	// - Filters by title if a non-empty title is provided (case-insensitive).
-	// - Filters by genres if a non-empty genres slice is provided.
-	// - Orders the results by the movie ID.
+	// Build the SQL query for retrieving movies.
+	// - Filters by title using full-text search (if title is not empty).
+	// - Filters by genres using the @> operator (if genres slice is not empty).
+	// - Orders the results by id.
 	query := `
 			SELECT id, created_at, title, year, runtime, genres, version
 			FROM movies
-			WHERE (LOWER(title) = LOWER($1) OR $1 = '')
+			WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
 			AND (genres @> $2 OR $2 = '{}')
 			ORDER BY id
 	`
