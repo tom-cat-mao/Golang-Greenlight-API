@@ -247,24 +247,9 @@ func (m MovieModel) Delete(id int64) error {
 	return nil
 }
 
-// GetAll retrieves a list of movies from the database, optionally filtered by title and genres,
-// and paginated/sorted according to the provided Filters struct.
-// Parameters:
-//   - title:   Filter movies by title (empty string means no filtering by title)
-//   - genres:  Filter movies by genres (empty slice means no filtering by genres)
-//   - filters: Pagination and sorting options (page, page_size, sort, etc.)
-//
-// Returns:
-//   - A slice of pointers to Movie structs representing the retrieved movies
-//   - An error if any occurs during the query or scanning process
-func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, error) {
-	// Build the SQL query for retrieving movies with optional filtering, sorting, and pagination.
-	// - The WHERE clause filters by title using full-text search (if a title is provided), or matches all if empty.
-	// - The genres filter uses the @> operator to check if the movie's genres array contains all specified genres, or matches all if the genres slice is empty.
-	// - The ORDER BY clause uses dynamic column and direction from the Filters struct, and always sorts by id as a secondary key for deterministic ordering.
-	// - LIMIT and OFFSET are used for pagination.
+func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, Metadata, error) {
 	query := fmt.Sprintf(`
-		SELECT id, created_at, title, year, runtime, genres, version
+		SELECT count(*) OVER(), id, created_at, title, year, runtime, genres, version
 		FROM movies
 		WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
 		AND (genres @> $2 OR $2 = '{}')
@@ -285,13 +270,14 @@ func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*M
 	// Execute the SQL query using the constructed query string and arguments for filtering, sorting, and pagination.
 	rows, err := m.DB.QueryContext(ctx, query, args...)
 	if err != nil {
-		// Return any error encountered during query execution.
-		return nil, err
+		return nil, Metadata{}, err
 	}
 	// Ensure the rows are closed after processing to free up database resources.
 	defer rows.Close()
 
-	// Prepare a slice to hold the resulting movies.
+	// Initialize a variable to store the total number of records returned by the query.
+	totalRecords := 0
+	// Initialize a slice to hold pointers to Movie structs for the result set.
 	movies := []*Movie{}
 
 	// Iterate over the rows in the result set.
@@ -300,6 +286,7 @@ func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*M
 
 		// Scan the current row into the movie struct.
 		err := rows.Scan(
+			&totalRecords,
 			&movie.ID,
 			&movie.CreatedAt,
 			&movie.Title,
@@ -309,7 +296,7 @@ func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*M
 			&movie.Version,
 		)
 		if err != nil {
-			return nil, err
+			return nil, Metadata{}, err
 		}
 
 		// Append the movie to the result slice.
@@ -318,9 +305,12 @@ func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*M
 
 	// Check for any errors encountered during iteration.
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return nil, Metadata{}, err
 	}
 
-	// Return the slice of movies and nil error.
-	return movies, nil
+	// Calculate pagination metadata (current page, page size, total records, etc.)
+	// using the totalRecords count and the current filter settings.
+	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
+
+	return movies, metadata, nil
 }

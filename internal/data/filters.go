@@ -6,6 +6,17 @@ import (
 	"greenlight.tomcat.net/internal/validator"
 )
 
+// Metadata holds pagination information for API responses.
+// It is typically included in responses that return a paginated list of resources
+// to help clients understand the current page, page size, and total number of records.
+type Metadata struct {
+	CurrentPage  int `json:"current_page,omitempty"`  // The current page number being returned.
+	PageSize     int `json:"page_size,omitempty"`     // The number of records per page.
+	FirstPage    int `json:"first_page,omitempty"`    // The first page number (usually 1).
+	LastPage     int `json:"last_page,omitempty"`     // The last available page number.
+	TotalRecords int `json:"total_records,omitempty"` // The total number of records matching the query.
+}
+
 // Filters defines the parameters for paginating and sorting query results.
 // It is used to control which page of results to return, how many results per page,
 // and the field by which to sort the results.
@@ -66,4 +77,28 @@ func (f Filters) limit() int {
 // where to start returning results for the requested page.
 func (f Filters) offset() int {
 	return (f.Page - 1) * f.PageSize
+}
+
+// calculateMetadata computes pagination metadata for a paginated API response.
+// It takes the total number of records, the current page, and the page size as input,
+// and returns a Metadata struct containing information about the current page, page size,
+// first page, last page, and total number of records.
+func calculateMetadata(totalRecords, page, pageSize int) Metadata {
+	// If there are no records, return an empty Metadata struct.
+	if totalRecords == 0 {
+		return Metadata{}
+	}
+
+	// Calculate the last page number using integer division.
+	// (totalRecords + pageSize - 1) / pageSize ensures that any partial page is counted as a full page.
+	lastPage := (totalRecords + pageSize - 1) / pageSize
+
+	// Return the populated Metadata struct.
+	return Metadata{
+		CurrentPage:  page,         // The current page number.
+		PageSize:     pageSize,     // The number of records per page.
+		FirstPage:    1,            // The first page is always 1.
+		LastPage:     lastPage,     // The calculated last page number.
+		TotalRecords: totalRecords, // The total number of records.
+	}
 }

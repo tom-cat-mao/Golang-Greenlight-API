@@ -293,16 +293,18 @@ func (app *application) listMoviesHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Retrieve the list of movies from the database using the provided filters (title, genres, pagination, and sorting).
-	movies, err := app.models.Movies.GetAll(input.Title, input.Genres, input.Filters)
+	// Call the GetAll method on the MovieModel to retrieve a list of movies and pagination metadata
+	// based on the provided title, genres, and filter parameters (pagination and sorting).
+	movies, metadata, err := app.models.Movies.GetAll(input.Title, input.Genres, input.Filters)
 	if err != nil {
-		// If an error occurs while fetching movies, return a 500 Internal Server Error response.
+		// If an error occurs while fetching movies from the database,
+		// respond with a 500 Internal Server Error and return early.
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	// Write the list of movies as a JSON response with HTTP 200 OK status.
-	err = app.writeJSON(w, http.StatusOK, envelope{"movies": movies}, nil)
+	err = app.writeJSON(w, http.StatusOK, envelope{"movies": movies, "metadata": metadata}, nil)
 	if err != nil {
 		// If an error occurs while writing the JSON response, send a 500 Internal Server Error response.
 		app.serverErrorResponse(w, r, err)
