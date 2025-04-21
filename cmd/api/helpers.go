@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/julienschmidt/httprouter"
+	"greenlight.tomcat.net/internal/validator"
 )
 
 // envelope is a helper type for wrapping JSON responses in a consistent structure.
@@ -146,4 +148,75 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any
 
 	// Return nil when decoding is successful
 	return nil
+}
+
+// readString retrieves a string value from URL query parameters.
+// It takes three parameters:
+//   - qs: The url.Values containing the query parameters
+//   - key: The parameter key to look up
+//   - defaultValue: The value to return if the key is not found or empty
+//
+// Returns:
+//   - The string value if the key exists and is not empty
+//   - The defaultValue if the key doesn't exist or is empty
+func (app *application) readString(qs url.Values, key string, defaultValue string) string {
+	s := qs.Get(key)
+
+	if s == "" {
+		return defaultValue
+	}
+
+	return s
+}
+
+// readCSV retrieves a comma-separated string value from URL query parameters and splits it into a slice.
+// It takes three parameters:
+//   - qs: The url.Values containing the query parameters
+//   - key: The parameter key to look up
+//   - defaultValue: The value to return if the key is not found or empty
+//
+// Returns:
+//   - A slice of strings split from the comma-separated value if the key exists and is not empty
+//   - The defaultValue if the key doesn't exist or is empty
+func (app *application) readCSV(qs url.Values, key string, defaultValue []string) []string {
+	// Get the raw CSV string value from query parameters
+	csv := qs.Get(key)
+
+	// Return default value if the key is empty or not found
+	if csv == "" {
+		return defaultValue
+	}
+
+	// Split the CSV string by commas and return the resulting slice
+	return strings.Split(csv, ",")
+}
+
+// readInt retrieves an integer value from URL query parameters.
+// It takes the following parameters:
+//   - qs: The url.Values containing the query parameters
+//   - key: The parameter key to look up
+//   - defaultValue: The value to return if the key is not found, empty, or invalid
+//   - v: A pointer to a validator.Validator used to record validation errors
+//
+// Returns:
+//   - The integer value if the key exists and is a valid integer
+//   - The defaultValue if the key doesn't exist, is empty, or is not a valid integer (and records a validation error)
+func (app *application) readInt(qs url.Values, key string, defaultValue int, v *validator.Validator) int {
+	s := qs.Get(key)
+
+	// If the parameter is missing or empty, return the default value
+	if s == "" {
+		return defaultValue
+	}
+
+	// Attempt to convert the string value to an integer
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		// If conversion fails, add a validation error and return the default value
+		v.AddError(key, "must be an integer value")
+		return defaultValue
+	}
+
+	// Return the parsed integer value
+	return i
 }

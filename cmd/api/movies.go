@@ -253,3 +253,42 @@ func (app *application) deleteMovieHandler(w http.ResponseWriter, r *http.Reques
 		app.serverErrorResponse(w, r, err)
 	}
 }
+
+// listMoviesHandler handles HTTP GET requests for listing movies with optional filters and pagination.
+func (app *application) listMoviesHandler(w http.ResponseWriter, r *http.Request) {
+	// Define a struct to hold the expected query parameters.
+	var input struct {
+		Title        string   // Title filter (empty string means no title filtering)
+		Genres       []string // Genres to filter by (empty slice means no genre filtering)
+		data.Filters          // Pagination (page, page_size) and sorting (sort) parameters
+	}
+
+	// Create a new validator instance to collect validation errors.
+	v := validator.New()
+
+	// Parse the query string parameters from the request URL.
+	qs := r.URL.Query()
+
+	// Read the "title" query parameter, defaulting to an empty string if not provided.
+	input.Title = app.readString(qs, "title", "")
+
+	// Read the "genres" query parameter as a CSV, defaulting to an empty slice if not provided.
+	input.Genres = app.readCSV(qs, "genres", []string{})
+
+	// Read the "page" query parameter as an integer, defaulting to 1 if not provided or invalid.
+	input.Page = app.readInt(qs, "page", 1, v)
+
+	input.PageSize = app.readInt(qs, "page_size", 20, v)
+
+	// Read the "sort" query parameter, defaulting to "id" if not provided.
+	input.Sort = app.readString(qs, "sort", "id")
+
+	// If there are any validation errors, return a 422 Unprocessable Entity response.
+	if !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	// For now, just print the parsed input struct for debugging.
+	fmt.Fprintf(w, "%+v\n", input)
+}

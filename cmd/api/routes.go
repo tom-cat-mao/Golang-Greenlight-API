@@ -27,6 +27,11 @@ func (app *application) routes() http.Handler {
 	// Returns application status information in JSON format
 	router.HandlerFunc(http.MethodGet, "/v1/healthcheck", app.healthcheckHandler)
 
+	// GET /v1/movies - Retrieves a paginated list of all movies
+	// Supports filtering by title, genres, and year range via query parameters
+	// Returns movies sorted by ID in ascending order by default
+	router.HandlerFunc(http.MethodGet, "/v1/movies", app.listMoviesHandler)
+
 	// Movie resource endpoints:
 	// POST /v1/movies - Creates a new movie record from JSON payload
 	// Requires title, year, runtime and genres in request body
