@@ -14,22 +14,25 @@ var (
 	ErrEditConflict   = errors.New("edit conflict")
 )
 
-// Models wraps all database model types in a single struct.
-// This provides a convenient way to access all data operations
-// through a single dependency rather than managing each model separately.
-// Current models included:
-//   - Movies: Handles all movie-related database operations
+// Models is a container struct that holds all our database models.
+// This provides a single access point to all data models in the application,
+// making dependency injection cleaner and more maintainable.
+// Fields:
+//   - Movies: The movie database model for CRUD operations on movie records
+//   - Users: The user database model for CRUD operations on user records
 type Models struct {
 	Movies MovieModel
+	Users  UserModel
 }
 
-// NewModels initializes and returns a new Models struct containing all database models.
+// NewModels initializes and returns a Models struct containing all database models.
 // It takes a *sql.DB connection pool as input and injects it into each model,
-// allowing them to share the same database connection.
+// allowing all models to share the same database connection.
 // Returns:
-//   - Models: A struct containing all initialized data models with the provided DB connection
+//   - Models: A struct containing initialized MovieModel and UserModel instances
 func NewModels(db *sql.DB) Models {
 	return Models{
-		Movies: MovieModel{DB: db}, // Initialize MovieModel with the database connection
+		Movies: MovieModel{DB: db}, // Initialize movie model with database connection
+		Users:  UserModel{DB: db},  // Initialize user model with database connection
 	}
 }
