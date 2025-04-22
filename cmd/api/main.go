@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -127,25 +126,15 @@ func main() {
 		models: data.NewModels(db),
 	}
 
-	// Configure the HTTP server. This sets up the server's address, handler,
-	// timeouts, and error logging.
-	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.port),
-		Handler:      app.routes(),
-		IdleTimeout:  time.Minute,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		ErrorLog:     slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	// Start the HTTP server and listen for incoming requests.
+	// If an error occurs while starting or running the server, log the error and exit the application.
+	err = app.serve()
+	if err != nil {
+		// Log the error message using the structured logger.
+		logger.Error(err.Error())
+		// Exit the application with a non-zero status code to indicate failure.
+		os.Exit(1)
 	}
-
-	// Start the HTTP server. This begins listening for incoming requests on the
-	// configured port.
-	logger.Info("starting server", "addr", srv.Addr, "env", cfg.env)
-
-	// If there's an error starting the server, log the error and exit.
-	err = srv.ListenAndServe()
-	logger.Error("server error", "error", err)
-	os.Exit(1)
 }
 
 // openDB creates and configures a PostgreSQL database connection pool using the provided configuration.
