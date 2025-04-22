@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,23 +24,49 @@ func (app *application) serve() error {
 		ErrorLog:     slog.NewLogLogger(app.logger.Handler(), slog.LevelError), // Custom error logger for the server.
 	}
 
-	// Start a background goroutine to listen for OS interrupt or terminate signals.
-	go func() {
-		quit := make(chan os.Signal, 1) // Channel to receive OS signals.
+	// Create a channel to receive errors from the shutdown goroutine.
+	shutdownError := make(chan error)
 
-		// Notify the quit channel on SIGINT (Ctrl+C) or SIGTERM (termination).
+	go func() {
+		// Create a channel to receive OS signals (buffered to 1 to avoid missing signals).
+		quit := make(chan os.Signal, 1)
+
+		// Notify the quit channel on receiving SIGINT or SIGTERM signals.
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-		s := <-quit // Block until a signal is received.
+		// Block until a signal is received.
+		s := <-quit
 
-		// Log the caught signal and exit the application.
-		app.logger.Info("caught signal", "signal", s.String())
-		os.Exit(0)
+		// Log that the server is shutting down, including the received signal.
+		app.logger.Info("shutting down server", "signal", s.String())
+
+		// Create a context with a 30-second timeout for the shutdown process.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel() // Ensure resources are cleaned up.
+
+		// Attempt to gracefully shut down the server and send any error to the shutdownError channel.
+		shutdownError <- srv.Shutdown(ctx)
 	}()
 
 	// Log that the server is starting, including the address and environment.
 	app.logger.Info("starting server", "addr", srv.Addr, "env", app.config.env)
 
-	// Start the HTTP server and return any error encountered.
-	return srv.ListenAndServe()
+	// Start the HTTP server. This will block until the server is stopped or an error occurs.
+	err := srv.ListenAndServe()
+	// If the error is not http.ErrServerClosed, it means the server stopped unexpectedly.
+	if !errors.Is(err, http.ErrServerClosed) {
+		// Return the error to be handled by the caller.
+		return err
+	}
+
+	// Wait for the shutdown goroutine to finish and receive any error from the shutdown process.
+	err = <-shutdownError
+	if err != nil {
+		// If an error occurred during shutdown, return it to be handled by the caller.
+		return err
+	}
+
+	app.logger.Info("stopped server", "addr", srv.Addr)
+
+	return nil
 }
