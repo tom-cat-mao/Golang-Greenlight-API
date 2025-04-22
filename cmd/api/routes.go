@@ -51,6 +51,12 @@ func (app *application) routes() http.Handler {
 	// Returns 404 if the movie does not exist, or 200 with a success message if deleted
 	router.HandlerFunc(http.MethodDelete, "/v1/movies/:id", app.deleteMovieHandler)
 
+	// POST /v1/users - Registers a new user account
+	// Requires name, email and password in request body
+	// Validates input and returns 201 Created on success
+	// Returns 400 Bad Request for invalid data or 409 Conflict for duplicate email
+	router.HandlerFunc(http.MethodPost, "/v1/users", app.registerUserHandler)
+
 	// Wrap the router with the rate limiting middleware to control request rate,
 	// then wrap with the panic recovery middleware to gracefully handle panics.
 	// This ensures all requests are subject to rate limiting and that any panics
