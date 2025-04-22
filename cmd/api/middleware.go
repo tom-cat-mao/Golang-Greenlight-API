@@ -72,32 +72,44 @@ func (app *application) rateLimit(next http.Handler) http.Handler {
 	}()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract the client IP from the request
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			app.serverErrorResponse(w, r, err)
-			return
+		// Check if rate limiting is enabled in the application configuration.
+		if app.config.limiter.enabled {
+
+			// Extract the client IP address from the request's RemoteAddr field.
+			// RemoteAddr is in the form "IP:port", so we split it to get just the IP.
+			ip, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				// If there's an error extracting the IP, respond with a server error and return.
+				app.serverErrorResponse(w, r, err)
+				return
+			}
+
+			// Lock the mutex before accessing or modifying the clients map to ensure thread safety.
+			mu.Lock() // Lock for client map access
+
+			// If this is a new client (IP not seen before), create a new rate limiter for them.
+			if _, found := clients[ip]; !found {
+				// Create a new rate limiter for this client using the configured requests per second (rps)
+				// and burst values from the application config.
+				clients[ip] = &client{
+					limiter: rate.NewLimiter(rate.Limit(app.config.limiter.rps), app.config.limiter.burst),
+				}
+			}
+
+			// Update the lastSeen timestamp for this client to the current time.
+			clients[ip].lastSeen = time.Now()
+
+			// Check if the client's rate limiter allows this request.
+			if !clients[ip].limiter.Allow() {
+				// If not allowed (rate limit exceeded), unlock the mutex and send a 429 response.
+				mu.Unlock() // Unlock before returning
+				app.rateLimitExceededResponse(w, r)
+				return
+			}
+
+			// Unlock the mutex after we're done with the clients map.
+			mu.Unlock() // Unlock when done
 		}
-
-		mu.Lock() // Lock for client map access
-
-		// Create a new rate limiter for new clients
-		if _, found := clients[ip]; !found {
-			// 2 requests per second with a burst of 4
-			clients[ip] = &client{limiter: rate.NewLimiter(2, 4)}
-		}
-
-		// Update the last seen time for this client
-		clients[ip].lastSeen = time.Now()
-
-		// Check if request is allowed by rate limiter
-		if !clients[ip].limiter.Allow() {
-			mu.Unlock() // Unlock before returning
-			app.rateLimitExceededResponse(w, r)
-			return
-		}
-
-		mu.Unlock() // Unlock when done
 
 		// If rate limit not exceeded, call the next handler
 		next.ServeHTTP(w, r)

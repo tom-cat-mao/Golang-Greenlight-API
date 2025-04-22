@@ -18,18 +18,20 @@ import (
 // the current version of the API, which can be useful for debugging and monitoring.
 const version = "1.0.0"
 
-// config defines the application's runtime configuration settings.
-// It encapsulates all configurable parameters needed to run the service,
-// including network, environment, and database configurations.
+// config holds all runtime configuration settings for the application.
+// This includes network, environment, database, and rate limiter options.
 // Fields:
-//   - port: Network port the HTTP server listens on (e.g. 4000)
-//   - env: Deployment environment ("development", "staging", "production")
-//     Determines operational behaviors like logging verbosity
-//   - db: Database connection pool configuration:
-//   - dsn: Data Source Name for PostgreSQL connection
-//   - maxOpenConns: Maximum number of open connections
-//   - maxIdleConns: Maximum number of idle connections
-//   - maxIdleTime: Maximum duration a connection can remain idle
+//   - port: The TCP port for the HTTP server (e.g., 4000).
+//   - env: The application environment ("development", "staging", "production").
+//   - db: Database connection pool settings, including:
+//   - dsn: PostgreSQL Data Source Name.
+//   - maxOpenConns: Maximum number of open DB connections.
+//   - maxIdleConns: Maximum number of idle DB connections.
+//   - maxIdleTime: Maximum time a connection can remain idle.
+//   - limiter: Rate limiter configuration, including:
+//   - rps: Requests per second allowed.
+//   - burst: Maximum burst size for rate limiting.
+//   - enabled: Whether rate limiting is enabled.
 type config struct {
 	port int
 	env  string
@@ -38,6 +40,11 @@ type config struct {
 		maxOpenConns int
 		maxIdleConns int
 		maxIdleTime  time.Duration
+	}
+	limiter struct {
+		rps     float64
+		burst   int
+		enabled bool
 	}
 }
 
@@ -60,23 +67,34 @@ type application struct {
 func main() {
 	var cfg config
 
-	// Define and parse command-line flags to configure the application. These flags provide
-	// runtime configuration options that can be set when starting the service.
-	// Available flags:
-	//   - port: HTTP server port (default: 4000)
-	//   - env: Runtime environment ("development", "staging", "production")
-	//   - db-dsn: PostgreSQL connection string (default: GREENLIGHT_DB_DSN env var)
-	//   - db-max-open-conns: Maximum open DB connections (default: 25)
-	//   - db-max-idle-conns: Maximum idle DB connections (default: 25)
-	//   - db-max-idle-time: Maximum idle time for DB connections (default: 15m)
+	// Register command-line flag for the API server port (default: 4000)
 	flag.IntVar(&cfg.port, "port", 4000, "API server port")
+
+	// Register command-line flag for the application environment (default: "development")
 	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
-	// Add sslmode=disable to the DSN.
+
+	// Register command-line flag for the PostgreSQL DSN, defaulting to the GREENLIGHT_DB_DSN environment variable
 	flag.StringVar(&cfg.db.dsn, "db-dsn", os.Getenv("GREENLIGHT_DB_DSN"), "PostgreSQL DSN")
 
+	// Register command-line flag for the maximum number of open database connections (default: 25)
 	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
+
+	// Register command-line flag for the maximum number of idle database connections (default: 25)
 	flag.IntVar(&cfg.db.maxIdleConns, "db-max-idle-conns", 25, "PostgreSQL max idle connections")
+
+	// Register command-line flag for the maximum idle time for database connections (default: 15 minutes)
 	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max connection idle time")
+
+	// Register command-line flag for the rate limiter's maximum requests per second (default: 2)
+	flag.Float64Var(&cfg.limiter.rps, "limiter-rps", 2, "Rate limiter maximum requests per second")
+
+	// Register command-line flag for the rate limiter's maximum burst size (default: 4)
+	flag.IntVar(&cfg.limiter.burst, "limiter-burst", 4, "Rate limiter maximum burst")
+
+	// Register command-line flag to enable or disable the rate limiter (default: true)
+	flag.BoolVar(&cfg.limiter.enabled, "limiter-enabled", true, "Enable rate limiter")
+
+	// Parse all registered command-line flags and populate the cfg struct
 	flag.Parse()
 
 	// Create a structured logger that writes log entries to standard output.
