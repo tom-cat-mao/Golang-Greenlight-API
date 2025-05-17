@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	_ "github.com/lib/pq"
 	"greenlight.tomcat.net/internal/data"
+	"greenlight.tomcat.net/internal/mailer"
 )
 
 // version represents the application version number. This constant is used to track
@@ -31,6 +33,12 @@ const version = "1.0.0"
 //   - rps: Requests per second allowed.
 //   - burst: Maximum burst size for rate limiting.
 //   - enabled: Whether rate limiting is enabled.
+//   - smtp: the config for smtp server, including:
+//   - host: the hostname
+//   - port: the post number
+//   - username: the user's name
+//   - password: the user's password
+//   - sender: the sender's name
 type config struct {
 	port int
 	env  string
@@ -45,6 +53,13 @@ type config struct {
 		burst   int
 		enabled bool
 	}
+	smtp struct {
+		host     string
+		port     int
+		username string
+		password string
+		sender   string
+	}
 }
 
 // application represents the core dependencies used throughout the application.
@@ -54,10 +69,14 @@ type config struct {
 //   - config: Runtime configuration settings (port, environment, database, etc.)
 //   - logger: Structured logger for application events and error reporting
 //   - models: Database access layer containing all data operations
+//   - mailer: Email sending client struct
+//     = wg: sync.WaitGroup to count the goroutine the the background
 type application struct {
 	config config
 	logger *slog.Logger
 	models data.Models
+	mailer *mailer.Mailer
+	wg     sync.WaitGroup
 }
 
 // main is the entry point of the application. It initializes the application,
@@ -93,6 +112,21 @@ func main() {
 	// Register command-line flag to enable or disable the rate limiter (default: true)
 	flag.BoolVar(&cfg.limiter.enabled, "limiter-enabled", true, "Enable rate limiter")
 
+	// Register command-line flag for the smtp server hostname
+	flag.StringVar(&cfg.smtp.host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
+
+	// Register command-line flag for the smport of the smtp server
+	flag.IntVar(&cfg.smtp.port, "smtp-port", 25, "SMTP port")
+
+	// Register command-line flag for the smtp username
+	flag.StringVar(&cfg.smtp.username, "smtp-username", "da827255e7cf4c", "SMTP username")
+
+	// Register command-line flag for the smtp password
+	flag.StringVar(&cfg.smtp.password, "smtp-password", "c0eb95a13f692e", "SMTP password")
+
+	// Register command-line flag for the smtp sender (default set as my email address)
+	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "maoy896@gmail.com", "SMTP sender")
+
 	// Parse all registered command-line flags and populate the cfg struct
 	flag.Parse()
 
@@ -118,12 +152,20 @@ func main() {
 	// Log a message indicating that the database connection pool has been established.
 	logger.Info("database connection pool established")
 
+	// Initialize the mailer using the settings from the command line flags
+	mailer, err := mailer.New(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
 	// Initialize the application struct. This creates an instance of the application
 	// struct, passing in the configuration and logger.
 	app := &application{
 		config: cfg,
 		logger: logger,
 		models: data.NewModels(db),
+		mailer: mailer,
 	}
 
 	// Start the HTTP server and listen for incoming requests.

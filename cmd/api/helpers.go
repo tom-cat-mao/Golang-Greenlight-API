@@ -220,3 +220,22 @@ func (app *application) readInt(qs url.Values, key string, defaultValue int, v *
 	// Return the parsed integer value
 	return i
 }
+
+// the helper function to launch a background goroutine
+// with recover to catch up error without terminated the application
+func (app *application) background(fn func()) {
+	// Increment the waitGroup counter
+	app.wg.Add(1)
+
+	go func() {
+		// Indicate current goroutine donw to decrease the number in WaitGroup
+		defer app.wg.Done()
+
+		defer func() {
+			if err := recover(); err != nil {
+				app.logger.Error(fmt.Sprintf("%v", err))
+			}
+		}()
+		fn()
+	}()
+}
