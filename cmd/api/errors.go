@@ -137,3 +137,13 @@ func (app *application) rateLimitExceededResponse(w http.ResponseWriter, r *http
 	// with HTTP 429 Too Many Requests status code and the error message.
 	app.errorResponse(w, r, http.StatusTooManyRequests, message)
 }
+
+// invalidCredentialsResponse sends a JSON-formatted 401 Unauthorized response to the client.
+// It's used when the client provides invalid authentication credentials.
+// Parameters:
+//   - w: http.ResponseWriter to write the HTTP response.
+//   - r: *http.Request to extract request context for logging.
+func (app *application) invalidCredentialsResponse(w http.ResponseWriter, r *http.Request) {
+	message := "invalid authentication credentials"
+	app.errorResponse(w, r, http.StatusUnauthorized, message)
+}

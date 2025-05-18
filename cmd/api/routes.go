@@ -57,11 +57,17 @@ func (app *application) routes() http.Handler {
 	// Returns 400 Bad Request for invalid data or 409 Conflict for duplicate email
 	router.HandlerFunc(http.MethodPost, "/v1/users", app.registerUserHandler)
 
-	// PUT /v1/users/activated - Activates a user account using a token
-	// Requires a valid activation token in the request body
-	// Returns 200 OK with updated user details on success
-	// Returns 400 Bad Request for invalid token or 404 Not Found if token is not found
+	// PUT /v1/users/activated - Activates a registered user account
+	// Requires a valid activation token in the request body, typically sent via email
+	// On success, it updates the user's status to 'activated' and returns 200 OK with user details
+	// If the token is invalid or expired, it returns 400 Bad Request with an appropriate message
+	// If the token is not found, which could indicate it was already used or never existed, it returns 404 Not Found
 	router.HandlerFunc(http.MethodPut, "/v1/users/activated", app.activateUserHandler)
+
+	// POST /v1/tokens/authentication - Creates a new authentication token for a user
+	// Requires valid user credentials (email and password) in the request body
+	// On success, it returns a new authentication token that can be used to access protected resources
+	router.HandlerFunc(http.MethodPost, "/v1/tokens/authentication", app.createAuthenticationTokenHandler)
 
 	// Wrap the router with the rate limiting middleware to control request rate
 	// then wrap with the panic recovery middleware to gracefully handle panics.

@@ -179,7 +179,7 @@ func (m UserModel) Insert(user *User) error {
 func (m UserModel) GetByEmail(email string) (*User, error) {
 	// SQL query to select user fields by email
 	query := `
-		SELECT id, created_id, name, email, password_hash, activated, version
+		SELECT id, created_at, name, email, password_hash, activated, version
 		FROM users
 		WHERE email = $1
 		`

@@ -11,10 +11,12 @@ import (
 )
 
 // Define constants for different token scopes.
-// Activation scope is defined, used for user account activation.
+// Activation scope
+// Authentication scope
 // This constant helps categorize tokens and manage their purpose within the application.
 const (
-	ScopActivation = "activation"
+	ScopActivation      = "activation"
+	ScopeAuthentication = "authentication"
 )
 
 // The Token struct
@@ -25,11 +27,11 @@ const (
 // expiry time
 // scope
 type Token struct {
-	Plaintext string
-	Hash      []byte
-	UserID    int64
-	Expiry    time.Time
-	Scope     string
+	Plaintext string    `json:"token"`
+	Hash      []byte    `json:"-"`
+	UserID    int64     `json:"-"`
+	Expiry    time.Time `json:"expiry"`
+	Scope     string    `json:"-"`
 }
 
 // TokenModel struct to include the sql connection
