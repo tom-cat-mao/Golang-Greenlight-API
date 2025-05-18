@@ -19,10 +19,12 @@ var (
 // making dependency injection cleaner and more maintainable.
 // Fields:
 //   - Movies: The movie database model for CRUD operations on movie records
+//   - Tokens: The token database model for CRUD operations on token records
 //   - Users: The user database model for CRUD operations on user records
 type Models struct {
 	Movies MovieModel
 	Users  UserModel
+	Tokens TokenModel
 }
 
 // NewModels initializes and returns a Models struct containing all database models.
@@ -34,5 +36,6 @@ func NewModels(db *sql.DB) Models {
 	return Models{
 		Movies: MovieModel{DB: db}, // Initialize movie model with database connection
 		Users:  UserModel{DB: db},  // Initialize user model with database connection
+		Tokens: TokenModel{DB: db}, // Initialize tokens model with database connection
 	}
 }

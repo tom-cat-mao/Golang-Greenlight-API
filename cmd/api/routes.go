@@ -57,7 +57,13 @@ func (app *application) routes() http.Handler {
 	// Returns 400 Bad Request for invalid data or 409 Conflict for duplicate email
 	router.HandlerFunc(http.MethodPost, "/v1/users", app.registerUserHandler)
 
-	// Wrap the router with the rate limiting middleware to control request rate,
+	// PUT /v1/users/activated - Activates a user account using a token
+	// Requires a valid activation token in the request body
+	// Returns 200 OK with updated user details on success
+	// Returns 400 Bad Request for invalid token or 404 Not Found if token is not found
+	router.HandlerFunc(http.MethodPut, "/v1/users/activated", app.activateUserHandler)
+
+	// Wrap the router with the rate limiting middleware to control request rate
 	// then wrap with the panic recovery middleware to gracefully handle panics.
 	// This ensures all requests are subject to rate limiting and that any panics
 	// are caught and handled with a proper error response.

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"greenlight.tomcat.net/internal/data"
 	"greenlight.tomcat.net/internal/validator"
@@ -66,10 +67,26 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Call the background helper to send the welcome email
-	// in the background
+	// Initialize new token for the new user
+	// with the expire time of 3 days
+	// after the user record has been created in the database
+	token, err := app.models.Tokens.New(user.ID, 3*24*time.Hour, data.ScopActivation)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// Run a background goroutine for the email sending
+	// Define a map to act as a 'holding structure' for the data
+	// contains the plaintext version of the activation token for the user
+	// along with their ID.
 	app.background(func() {
-		err = app.mailer.Send(user.Email, "user_welcome.html", user)
+		data := map[string]any{
+			"activationToken": token.Plaintext,
+			"userID":          user.ID,
+		}
+
+		err = app.mailer.Send(user.Email, "user_welcome.html", data)
 		if err != nil {
 			app.logger.Error(err.Error())
 		}
@@ -81,6 +98,73 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 	err = app.writeJSON(w, http.StatusAccepted, envelope{"user": user}, nil)
 	if err != nil {
 		// If JSON writing fails, respond with 500 Internal Server Error
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+// Activate the User with the token which the client sent
+func (app *application) activateUserHandler(w http.ResponseWriter, r *http.Request) {
+	// Parse the plaintext activation token from the request body
+	var input struct {
+		TokenPlaintext string `json:"token"`
+	}
+
+	err := app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	// Validate the plaintext token provided by the client
+	v := validator.New()
+
+	if data.ValidateTokenPlaintext(v, input.TokenPlaintext); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	// Retrieve the details of the user associated with the token
+	// If no matching record is found,
+	// then we let the client know that the token
+	// they provided is not valid
+	user, err := app.models.Users.GetForToken(data.ScopActivation, input.TokenPlaintext)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			v.AddError("token", "invalid or expired activation token")
+			app.failedValidationResponse(w, r, v.Errors)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	// Update the user's activatio status
+	user.Activated = true
+
+	// Save the updated user record in our database,
+	// checking for any edit conflicts
+	err = app.models.Users.Update(user)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrEditConflict):
+			app.editConflictResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	// If everything went successfully, then we delete all activation tokens for the user
+	err = app.models.Tokens.DeleteAllForUser(data.ScopActivation, user.ID)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// Send the updated user detals to the client in a JSON response
+	err = app.writeJSON(w, http.StatusOK, envelope{"user": user}, nil)
+	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
 }
