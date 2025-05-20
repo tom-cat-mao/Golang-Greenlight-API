@@ -69,9 +69,9 @@ func (app *application) routes() http.Handler {
 	// On success, it returns a new authentication token that can be used to access protected resources
 	router.HandlerFunc(http.MethodPost, "/v1/tokens/authentication", app.createAuthenticationTokenHandler)
 
-	// Wrap the router with the rate limiting middleware to control request rate
-	// then wrap with the panic recovery middleware to gracefully handle panics.
-	// This ensures all requests are subject to rate limiting and that any panics
-	// are caught and handled with a proper error response.
-	return app.recoverPanic(app.rateLimit(router))
+	// Wrap the router with the following middleware:
+	// 1. authenticate: Handles user authentication based on the "Authorization" header.
+	// 2. rateLimit: Implements rate limiting to prevent abuse and ensure fair usage.
+	// 3. recoverPanic: Gracefully handles panics to prevent server crashes and return controlled responses.
+	return app.recoverPanic(app.rateLimit(app.authenticate(router)))
 }

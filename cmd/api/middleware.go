@@ -1,13 +1,17 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
+	"greenlight.tomcat.net/internal/data"
+	"greenlight.tomcat.net/internal/validator"
 )
 
 // recoverPanic is a middleware that gracefully handles panics in the application.
@@ -112,6 +116,76 @@ func (app *application) rateLimit(next http.Handler) http.Handler {
 		}
 
 		// If rate limit not exceeded, call the next handler
+		next.ServeHTTP(w, r)
+	})
+}
+
+// authenticate is a middleware that handles user authentication based on the "Authorization" header.
+// It performs the following steps:
+// 1. Adds a "Vary: Authorization" header to the response to indicate that responses may vary based on the Authorization header.
+// 2. Retrieves the "Authorization" header from the request.
+// 3. If the header is empty, it sets the user in the request context to AnonymousUser and proceeds to the next handler.
+// 4. If the header is present, it expects a "Bearer <token>" format.
+// 5. Validates the token format and returns an invalidAuthenticationTokenResponse if the format is incorrect.
+// 6. Validates the token using ValidateTokenPlaintext and returns an invalidAuthenticationTokenResponse if the token is invalid.
+// 7. Retrieves the user associated with the token using GetForToken.
+// 8. If the user is not found, it returns an invalidAuthenticationTokenResponse.
+// 9. If any other error occurs during token retrieval, it returns a serverErrorResponse.
+// 10. If the user is successfully retrieved, it sets the user in the request context and proceeds to the next handler.
+func (app *application) authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add a "Vary: Authorization" header to the response. This indicates to any
+		// caches that the response may vary based on the value of the Authorization
+		// header in the request.
+		w.Header().Add("Vary", "Authorization")
+
+		// Retrieve the value of the Authorization header from the request. This will
+		// usually contain the user's authentication token.
+		authorizationHeader := r.Header.Get("Authorization")
+
+		// If the Authorization header is empty, treat this as an anonymous request.
+		if authorizationHeader == "" {
+			r = app.contextSetUser(r, data.AnonymousUser)
+			// Call the next handler in the chain.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Split this into its constituent parts, and if the header isn't in the expected format
+		// return 401 Unauthorized response
+		headerParts := strings.Split(authorizationHeader, " ")
+		if len(headerParts) != 2 || headerParts[0] != "Bearer" {
+			app.invalidAuthenticationTokenResponse(w, r)
+			return
+		}
+
+		// Extract the actual authentication token from the header parts
+		token := headerParts[1]
+
+		v := validator.New()
+
+		if data.ValidateTokenPlaintext(v, token); !v.Valid() {
+			app.invalidAuthenticationTokenResponse(w, r)
+			return
+		}
+
+		// Retrieve the details of the user associated with the authentication token,
+		// again calling the invalidAuthenticationTokenResponse() helper if no matching record was found
+		user, err := app.models.Users.GetForToken(data.ScopeAuthentication, token)
+		if err != nil {
+			switch {
+			case errors.Is(err, data.ErrRecordNotFound):
+				app.invalidAuthenticationTokenResponse(w, r)
+			default:
+				app.serverErrorResponse(w, r, err)
+			}
+			return
+		}
+
+		// Call the contextSetUser() helper to add the user informatio to the request
+		r = app.contextSetUser(r, user)
+
+		// Call the next handler in the chain
 		next.ServeHTTP(w, r)
 	})
 }

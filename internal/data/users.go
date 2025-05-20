@@ -16,6 +16,7 @@ var (
 	// that already exists in the database. This helps maintain email uniqueness
 	// as enforced by the UNIQUE constraint in the users table.
 	ErrDuplicateEmail = errors.New("duplicate email")
+	AnonymousUser     = &User{} // AnonymouseUser variable
 )
 
 // User represents a user in the system.
@@ -316,4 +317,9 @@ func (m UserModel) GetForToken(tokenScope, tokenPlaintext string) (*User, error)
 
 	// Return the matching user
 	return &user, nil
+}
+
+// Check whether a user is an anonymous user
+func (u *User) IsAnonymous() bool {
+	return u == AnonymousUser
 }
