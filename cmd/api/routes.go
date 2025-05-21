@@ -23,33 +23,24 @@ func (app *application) routes() http.Handler {
 	// The routes follow RESTful conventions and are versioned under /v1/ prefix.
 	// Each route is documented with its purpose and functionality:
 
-	// Healthcheck endpoint - used for service monitoring and uptime checks
-	// Returns application status information in JSON format
 	router.HandlerFunc(http.MethodGet, "/v1/healthcheck", app.healthcheckHandler)
 
-	// GET /v1/movies - Retrieves a paginated list of all movies
-	// Supports filtering by title, genres, and year range via query parameters
-	// Returns movies sorted by ID in ascending order by default
-	router.HandlerFunc(http.MethodGet, "/v1/movies", app.listMoviesHandler)
+	// GET /v1/movies - Retrieves a list of movies, applying the requireActivatedUser middleware
+	// to ensure only activated users can access this resource.
+	router.HandlerFunc(http.MethodGet, "/v1/movies", app.requireActivatedUser(app.listMoviesHandler))
 
-	// Movie resource endpoints:
-	// POST /v1/movies - Creates a new movie record from JSON payload
-	// Requires title, year, runtime and genres in request body
-	router.HandlerFunc(http.MethodPost, "/v1/movies", app.createMovieHandler)
+	// POST /v1/movies - Creates a new movie, applying the requireActivatedUser middleware
+	// to ensure only activated users can access this resource.
+	router.HandlerFunc(http.MethodPost, "/v1/movies", app.requireActivatedUser(app.createMovieHandler))
 
-	// GET /v1/movies/:id - Retrieves a specific movie by its ID
-	// Returns 404 if movie doesn't exist or ID is invalid
-	router.HandlerFunc(http.MethodGet, "/v1/movies/:id", app.showMovieHandler)
+	// GET /v1/movies/:id - Retrieves a specific movie by ID, applying the requireActivatedUser middleware.
+	router.HandlerFunc(http.MethodGet, "/v1/movies/:id", app.requireActivatedUser(app.showMovieHandler))
 
-	// PATCH /v1/movies/:id - Partially updates an existing movie record
-	// Accepts partial updates - only fields provided in request body will be updated
-	// Validates input data and returns appropriate error responses
-	router.HandlerFunc(http.MethodPatch, "/v1/movies/:id", app.updateMovieHandler)
+	// PATCH /v1/movies/:id - Updates a specific movie by ID, applying the requireActivatedUser middleware.
+	router.HandlerFunc(http.MethodPatch, "/v1/movies/:id", app.requireActivatedUser(app.updateMovieHandler))
 
-	// DELETE /v1/movies/:id - Deletes a movie by its ID
-	// Expects a valid movie ID in the URL path
-	// Returns 404 if the movie does not exist, or 200 with a success message if deleted
-	router.HandlerFunc(http.MethodDelete, "/v1/movies/:id", app.deleteMovieHandler)
+	// DELETE /v1/movies/:id - Deletes a specific movie by ID, applying the requireActivatedUser middleware.
+	router.HandlerFunc(http.MethodDelete, "/v1/movies/:id", app.requireActivatedUser(app.deleteMovieHandler))
 
 	// POST /v1/users - Registers a new user account
 	// Requires name, email and password in request body

@@ -158,3 +158,23 @@ func (app *application) invalidAuthenticationTokenResponse(w http.ResponseWriter
 	message := "invalid or missing authentication token"
 	app.errorResponse(w, r, http.StatusUnauthorized, message)
 }
+
+// authenticationRequiredResponse sends a JSON-formatted 401 Unauthorized response to the client.
+// It's used when the client attempts to access a protected resource without being authenticated.
+// Parameters:
+//   - w: http.ResponseWriter to write the HTTP response.
+//   - r: *http.Request to extract request context for logging.
+func (app *application) authenticationRequiredResponse(w http.ResponseWriter, r *http.Request) {
+	message := "you must be authenticated to access this resource"
+	app.errorResponse(w, r, http.StatusUnauthorized, message)
+}
+
+// authenticationRequiredResponse sends a JSON-formatted 401 Unauthorized response to the client.
+// It's used when the client attempts to access a protected resource without being authenticated.
+// Parameters:
+//   - w: http.ResponseWriter to write the HTTP response.
+//   - r: *http.Request to extract request context for logging.
+func (app *application) inactiveAccountResponse(w http.ResponseWriter, r *http.Request) {
+	message := "your user account must be activated to access this resource"
+	app.errorResponse(w, r, http.StatusForbidden, message)
+}

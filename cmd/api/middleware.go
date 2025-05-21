@@ -189,3 +189,46 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// requireActivatedUser is a middleware that checks if the user account is activated.
+// It retrieves the user from the request context and checks if the user is activated.
+// If the user is not activated, it returns an inactive account response.
+// Otherwise, it calls the next handler in the chain.
+// This middleware is used to protect routes that require an activated user account.
+func (app *application) requireActivatedUser(next http.HandlerFunc) http.HandlerFunc {
+	// Define a new http.HandlerFunc which wraps the next handler in the chain.
+	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Retrieve the user from the request context.
+		user := app.contextGetUser(r)
+
+		// Check if the user is not activated.
+		if !user.Activated {
+			// If the user is not activated, return an inactive account response.
+			app.inactiveAccountResponse(w, r)
+			return
+		}
+		// If the user is activated, call the next handler in the chain.
+		next.ServeHTTP(w, r)
+	})
+	// Wrap the new handler with the requireAuthenticatedUser middleware to ensure the user is authenticated first.
+	return app.requireAuthenticatedUser(fn)
+}
+
+// requireAuthenticatedUser is a middleware that checks if the request is from an authenticated user.
+// It retrieves the user from the request context and checks if the user is anonymous.
+// If the user is anonymous, it returns an authentication required response.
+// Otherwise, it calls the next handler in the chain.
+// This middleware is used to protect routes that require authentication.
+func (app *application) requireAuthenticatedUser(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+
+		if user.IsAnonymous() {
+			app.authenticationRequiredResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+
+}
