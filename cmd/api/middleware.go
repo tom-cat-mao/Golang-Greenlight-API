@@ -232,3 +232,36 @@ func (app *application) requireAuthenticatedUser(next http.HandlerFunc) http.Han
 	})
 
 }
+
+// requirePermission is a middleware that checks if the authenticated and activated user has a specific permission.
+// It takes a permission code (string) and the next http.HandlerFunc in the chain.
+// It retrieves the user from the request context, fetches their permissions from the database,
+// and checks if the required permission code is included in their permissions.
+// If the user does not have the required permission, it returns a 403 Forbidden response.
+// If there's a database error fetching permissions, it returns a 500 Internal Server Error.
+// Otherwise, it calls the next handler in the chain.
+// This middleware is typically chained after requireActivatedUser to ensure the user is both
+// authenticated and activated before checking permissions.
+// Parameters:
+// - code: The permission code (string) required to access the resource.
+// - next: The next http.HandlerFunc in the middleware chain.
+func (app *application) requirePermission(code string, next http.HandlerFunc) http.HandlerFunc {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+
+		permissions, err := app.models.Permissions.GetAllForUser(user.ID)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+			return
+		}
+
+		if !permissions.Include(code) {
+			app.notPermittedResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+
+	return app.requireActivatedUser(fn)
+}

@@ -27,20 +27,20 @@ func (app *application) routes() http.Handler {
 
 	// GET /v1/movies - Retrieves a list of movies, applying the requireActivatedUser middleware
 	// to ensure only activated users can access this resource.
-	router.HandlerFunc(http.MethodGet, "/v1/movies", app.requireActivatedUser(app.listMoviesHandler))
+	router.HandlerFunc(http.MethodGet, "/v1/movies", app.requirePermission("movies:read", app.listMoviesHandler))
 
 	// POST /v1/movies - Creates a new movie, applying the requireActivatedUser middleware
 	// to ensure only activated users can access this resource.
-	router.HandlerFunc(http.MethodPost, "/v1/movies", app.requireActivatedUser(app.createMovieHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/movies", app.requirePermission("movies:write", app.createMovieHandler))
 
 	// GET /v1/movies/:id - Retrieves a specific movie by ID, applying the requireActivatedUser middleware.
-	router.HandlerFunc(http.MethodGet, "/v1/movies/:id", app.requireActivatedUser(app.showMovieHandler))
+	router.HandlerFunc(http.MethodGet, "/v1/movies/:id", app.requirePermission("movies:read", app.showMovieHandler))
 
 	// PATCH /v1/movies/:id - Updates a specific movie by ID, applying the requireActivatedUser middleware.
-	router.HandlerFunc(http.MethodPatch, "/v1/movies/:id", app.requireActivatedUser(app.updateMovieHandler))
+	router.HandlerFunc(http.MethodPatch, "/v1/movies/:id", app.requirePermission("movies:write", app.updateMovieHandler))
 
 	// DELETE /v1/movies/:id - Deletes a specific movie by ID, applying the requireActivatedUser middleware.
-	router.HandlerFunc(http.MethodDelete, "/v1/movies/:id", app.requireActivatedUser(app.deleteMovieHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/movies/:id", app.requirePermission("movies:write", app.deleteMovieHandler))
 
 	// POST /v1/users - Registers a new user account
 	// Requires name, email and password in request body

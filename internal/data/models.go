@@ -14,17 +14,18 @@ var (
 	ErrEditConflict   = errors.New("edit conflict")
 )
 
-// Models is a container struct that holds all our database models.
-// This provides a single access point to all data models in the application,
-// making dependency injection cleaner and more maintainable.
-// Fields:
-//   - Movies: The movie database model for CRUD operations on movie records
-//   - Tokens: The token database model for CRUD operations on token records
-//   - Users: The user database model for CRUD operations on user records
+// Models struct holds instances of all data models (MovieModel, UserModel, etc.).
+// This allows us to group all data access objects together and pass them around
+// as a single dependency.
 type Models struct {
+	// Movies provides methods for interacting with the 'movies' table.
 	Movies MovieModel
-	Users  UserModel
+	// Users provides methods for interacting with the 'users' table.
+	Users UserModel
+	// Tokens provides methods for interacting with the 'tokens' table.
 	Tokens TokenModel
+	// Permissions provides methods for interacting with the 'permissions' and 'users_permissions' tables.
+	Permissions PermissionModel
 }
 
 // NewModels initializes and returns a Models struct containing all database models.
@@ -34,8 +35,9 @@ type Models struct {
 //   - Models: A struct containing initialized MovieModel and UserModel instances
 func NewModels(db *sql.DB) Models {
 	return Models{
-		Movies: MovieModel{DB: db}, // Initialize movie model with database connection
-		Users:  UserModel{DB: db},  // Initialize user model with database connection
-		Tokens: TokenModel{DB: db}, // Initialize tokens model with database connection
+		Movies:      MovieModel{DB: db},      // Initialize movie model with database connection
+		Users:       UserModel{DB: db},       // Initialize user model with database connection
+		Tokens:      TokenModel{DB: db},      // Initialize tokens model with database connection
+		Permissions: PermissionModel{DB: db}, // Initialize permissions model with database connection
 	}
 }

@@ -178,3 +178,13 @@ func (app *application) inactiveAccountResponse(w http.ResponseWriter, r *http.R
 	message := "your user account must be activated to access this resource"
 	app.errorResponse(w, r, http.StatusForbidden, message)
 }
+
+// notPermittedResponse sends a JSON-formatted 403 Forbidden response to the client.
+// It's used when the authenticated user does not have the required permissions to access a resource.
+// Parameters:
+//   - w: http.ResponseWriter to write the HTTP response.
+//   - r: *http.Request to extract request context for logging.
+func (app *application) notPermittedResponse(w http.ResponseWriter, r *http.Request) {
+	message := "your user account doesn't have the necessary permissions to access this resource"
+	app.errorResponse(w, r, http.StatusForbidden, message)
+}
