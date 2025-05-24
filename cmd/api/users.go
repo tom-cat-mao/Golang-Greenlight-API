@@ -67,6 +67,14 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Add the "movies:read" permission for the new user.
+	// This grants them the ability to read movie data.
+	err = app.models.Permissions.AddForUser(user.ID, "movies:read")
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
 	// Initialize new token for the new user
 	// with the expire time of 3 days
 	// after the user record has been created in the database
