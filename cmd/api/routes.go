@@ -61,8 +61,9 @@ func (app *application) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/tokens/authentication", app.createAuthenticationTokenHandler)
 
 	// Wrap the router with the following middleware:
-	// 1. authenticate: Handles user authentication based on the "Authorization" header.
-	// 2. rateLimit: Implements rate limiting to prevent abuse and ensure fair usage.
-	// 3. recoverPanic: Gracefully handles panics to prevent server crashes and return controlled responses.
-	return app.recoverPanic(app.rateLimit(app.authenticate(router)))
+	// 1. recoverPanic: Gracefully handles panics to prevent server crashes and return controlled responses.
+	// 2. enableCORS: Adds CORS headers to responses.
+	// 3. rateLimit: Implements rate limiting to prevent abuse and ensure fair usage.
+	// 4. authenticate: Handles user authentication based on the "Authorization" header.
+	return app.recoverPanic(app.enableCORS(app.rateLimit(app.authenticate(router)))) // Corrected middleware order
 }

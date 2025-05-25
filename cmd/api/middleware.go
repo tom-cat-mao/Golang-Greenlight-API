@@ -265,3 +265,32 @@ func (app *application) requirePermission(code string, next http.HandlerFunc) ht
 
 	return app.requireActivatedUser(fn)
 }
+
+// enableCORS is a middleware that adds Cross-Origin Resource Sharing (CORS) headers to responses.
+// It checks the 'Origin' header of the incoming request against a list of trusted origins
+// configured in the application. If the origin is trusted, it sets the 'Access-Control-Allow-Origin'
+// header in the response to the request's origin. It also adds a 'Vary: Origin' header
+// to inform caches that the response may differ based on the 'Origin' header.
+// This middleware is essential for allowing web browsers from different domains to make
+// requests to the API.
+// Parameters:
+// - next: The next http.Handler in the middleware chain.
+// Returns: An http.Handler that wraps the next handler with CORS logic.
+func (app *application) enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Origin")
+
+		origin := r.Header.Get("Origin")
+
+		if origin != "" {
+			for i := range app.config.cors.trustedOrigins {
+				if origin == app.config.cors.trustedOrigins[i] {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					break
+				}
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}

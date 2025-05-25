@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,23 +23,26 @@ const version = "1.0.0"
 // config holds all runtime configuration settings for the application.
 // This includes network, environment, database, and rate limiter options.
 // Fields:
-//   - port: The TCP port for the HTTP server (e.g., 4000).
-//   - env: The application environment ("development", "staging", "production").
-//   - db: Database connection pool settings, including:
-//   - dsn: PostgreSQL Data Source Name.
-//   - maxOpenConns: Maximum number of open DB connections.
-//   - maxIdleConns: Maximum number of idle DB connections.
-//   - maxIdleTime: Maximum time a connection can remain idle.
-//   - limiter: Rate limiter configuration, including:
-//   - rps: Requests per second allowed.
-//   - burst: Maximum burst size for rate limiting.
-//   - enabled: Whether rate limiting is enabled.
-//   - smtp: the config for smtp server, including:
-//   - host: the hostname
-//   - port: the post number
-//   - username: the user's name
-//   - password: the user's password
-//   - sender: the sender's name
+//
+//	port: The TCP port for the HTTP server (e.g., 4000).
+//	env: The application environment ("development", "staging", "production").
+//	db: Database connection pool settings, including:
+//	  dsn: PostgreSQL Data Source Name.
+//	  maxOpenConns: Maximum number of open DB connections.
+//	  maxIdleConns: Maximum number of idle DB connections.
+//	  maxIdleTime: Maximum time a connection can remain idle.
+//	limiter: Rate limiter configuration, including:
+//	  rps: Requests per second allowed.
+//	  burst: Maximum burst size for rate limiting.
+//	  enabled: Whether rate limiting is enabled.
+//	smtp: the config for smtp server, including:
+//	  host: the hostname
+//	  port: the post number
+//	  username: the user's name
+//	  password: the user's password
+//	  sender: the sender's name
+//	cors: CORS configuration, including:
+//	  trustedOrigins: A slice of trusted origins for CORS requests.
 type config struct {
 	port int
 	env  string
@@ -59,6 +63,9 @@ type config struct {
 		username string
 		password string
 		sender   string
+	}
+	cors struct {
+		trustedOrigins []string
 	}
 }
 
@@ -126,6 +133,13 @@ func main() {
 
 	// Register command-line flag for the smtp sender (default set as my email address)
 	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "maoy896@gmail.com", "SMTP sender")
+
+	// Register a custom command-line flag for trusted CORS origins.
+	// The flag expects a space-separated string of origins.
+	flag.Func("cors-trusted-origins", "Trusted CORS origins (space separated)", func(s string) error {
+		cfg.cors.trustedOrigins = strings.Fields(s)
+		return nil
+	})
 
 	// Parse all registered command-line flags and populate the cfg struct
 	flag.Parse()
