@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"expvar"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -172,6 +174,28 @@ func main() {
 		logger.Error(err.Error())
 		os.Exit(1)
 	}
+
+	// Publish the application version to the /debug/vars endpoint.
+	// This allows monitoring tools to easily retrieve the current version.
+	expvar.NewString("version").Set(version)
+
+	// Publish the number of active goroutines to the /debug/vars endpoint.
+	// This provides insight into the application's concurrency level.
+	expvar.Publish("goroutines", expvar.Func(func() any {
+		return runtime.NumGoroutine()
+	}))
+
+	// Publish database connection pool statistics to the /debug/vars endpoint.
+	// This includes metrics like the number of open connections, idle connections, etc.
+	expvar.Publish("database", expvar.Func(func() any {
+		return db.Stats()
+	}))
+
+	// Publish the current Unix timestamp to the /debug/vars endpoint.
+	// This can be used to check the server's clock and for general monitoring.
+	expvar.Publish("timestamp", expvar.Func(func() any {
+		return time.Now().Unix()
+	}))
 
 	// Initialize the application struct. This creates an instance of the application
 	// struct, passing in the configuration and logger.

@@ -2,9 +2,11 @@ package main
 
 import (
 	"errors"
+	"expvar"
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +15,18 @@ import (
 	"greenlight.tomcat.net/internal/data"
 	"greenlight.tomcat.net/internal/validator"
 )
+
+// metricsResponseWriter is a custom http.ResponseWriter wrapper used to capture
+// the HTTP status code written by the handler. This is necessary because the
+// standard http.ResponseWriter doesn't provide a direct way to access the
+// status code after WriteHeader has been called.
+// It wraps an existing http.ResponseWriter and adds fields to store the status
+// code and track whether the header has been written.
+type metricsResponseWriter struct {
+	wrapped       http.ResponseWriter
+	statusCode    int
+	headerWritten bool
+}
 
 // recoverPanic is a middleware that gracefully handles panics in the application.
 // It wraps the next handler in a deferred function that catches any panics,
@@ -304,4 +318,90 @@ func (app *application) enableCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// newMetricsResponseWriter creates and returns a new instance of metricsResponseWriter.
+// It wraps the provided http.ResponseWriter and initializes the statusCode to http.StatusOK.
+// Parameters:
+// - w: The http.ResponseWriter to wrap.
+func newMetricsResponseWriter(w http.ResponseWriter) *metricsResponseWriter {
+	return &metricsResponseWriter{
+		wrapped:    w,
+		statusCode: http.StatusOK,
+	}
+}
+
+// Header returns the header map of the wrapped http.ResponseWriter.
+// This allows the metricsResponseWriter to satisfy the http.ResponseWriter interface.
+func (mw *metricsResponseWriter) Header() http.Header {
+	return mw.wrapped.Header()
+}
+
+// WriteHeader writes the HTTP status code to the wrapped http.ResponseWriter.
+// It also records the status code internally if it's the first time WriteHeader is called,
+// and sets the headerWritten flag to true.
+// Parameters:
+// - statusCode: The HTTP status code to write.
+// This allows the metricsResponseWriter to satisfy the http.ResponseWriter interface.
+func (mw *metricsResponseWriter) WriteHeader(statusCode int) {
+	mw.wrapped.WriteHeader(statusCode)
+
+	if !mw.headerWritten {
+		mw.statusCode = statusCode
+		mw.headerWritten = true
+	}
+}
+
+// Write writes the data to the wrapped http.ResponseWriter.
+// It sets the headerWritten flag to true before writing.
+// Parameters:
+// - b: The byte slice containing the data to write.
+// This allows the metricsResponseWriter to satisfy the http.ResponseWriter interface.
+func (mw *metricsResponseWriter) Write(b []byte) (int, error) {
+	mw.headerWritten = true
+	return mw.wrapped.Write(b)
+}
+
+// metrics is a middleware that collects and publishes application metrics.
+// It tracks the total number of requests received, the total number of responses sent,
+// the total processing time for requests, and the count of responses sent by HTTP status code.
+// These metrics are exposed via the /debug/vars endpoint.
+// Parameters:
+// - next: The next http.Handler in the middleware chain.
+// Returns:
+// - An http.Handler that wraps the next handler with metrics collection logic.
+// The metrics collected are:
+// - total_requests_received: Total number of requests processed.
+// - total_responses_sent: Total number of responses sent.
+func (app *application) metrics(next http.Handler) http.Handler {
+	var (
+		totalRequestsReceived           = expvar.NewInt("total_requests_received")
+		totalResponsesSent              = expvar.NewInt("total_responses_sent")
+		totalProcessingTimeMicroseconds = expvar.NewInt("total_processing_time_µs")
+		totalResponsesSentByStatus      = expvar.NewMap("total_responses_sent_by_status")
+	)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		// Increment the counter for total requests received.
+		totalRequestsReceived.Add(1)
+
+		// Create a new metricsResponseWriter to capture the status code.
+		mw := newMetricsResponseWriter(w)
+
+		// Call the next handler in the chain, passing our custom response writer.
+		next.ServeHTTP(mw, r)
+
+		// Increment the counter for total responses sent.
+		totalResponsesSent.Add(1)
+
+		// Increment the counter for the specific HTTP status code returned.
+		// Convert the status code to a string to use as a key in the expvar.Map.
+		totalResponsesSentByStatus.Add(strconv.Itoa(mw.statusCode), 1)
+
+		// Calculate the processing time for the request and add it to the total.
+		duration := time.Since(start).Microseconds()
+		totalProcessingTimeMicroseconds.Add(duration)
+	})
+
 }
