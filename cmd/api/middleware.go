@@ -266,19 +266,23 @@ func (app *application) requirePermission(code string, next http.HandlerFunc) ht
 	return app.requireActivatedUser(fn)
 }
 
-// enableCORS is a middleware that adds Cross-Origin Resource Sharing (CORS) headers to responses.
-// It checks the 'Origin' header of the incoming request against a list of trusted origins
-// configured in the application. If the origin is trusted, it sets the 'Access-Control-Allow-Origin'
-// header in the response to the request's origin. It also adds a 'Vary: Origin' header
-// to inform caches that the response may differ based on the 'Origin' header.
-// This middleware is essential for allowing web browsers from different domains to make
-// requests to the API.
+// enableCORS is a middleware that adds Cross-Origin Resource Sharing (CORS) headers
+// to responses based on a list of trusted origins.
+// It handles both simple requests and preflight requests (OPTIONS method).
+// For simple requests from a trusted origin, it sets the Access-Control-Allow-Origin header.
+// For preflight requests from a trusted origin, it sets Access-Control-Allow-Methods
+// and Access-Control-Allow-Headers headers and responds with a 200 OK status.
+// It also adds "Vary: Origin" and "Vary: Access-Control-Request-Method" headers
+// to inform caches that responses may vary based on these request headers.
 // Parameters:
 // - next: The next http.Handler in the middleware chain.
-// Returns: An http.Handler that wraps the next handler with CORS logic.
+// Returns:
+// - An http.Handler that wraps the next handler with CORS logic.
 func (app *application) enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Origin")
+
+		w.Header().Add("Vary", "Access-Control-Request-Method")
 
 		origin := r.Header.Get("Origin")
 
@@ -286,11 +290,18 @@ func (app *application) enableCORS(next http.Handler) http.Handler {
 			for i := range app.config.cors.trustedOrigins {
 				if origin == app.config.cors.trustedOrigins[i] {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
+
+					if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+						w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, PUT, PATCH, DELETE")
+						w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+
 					break
 				}
 			}
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }

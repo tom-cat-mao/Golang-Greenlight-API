@@ -25,7 +25,7 @@ const html = `
 				body: JSON.stringify({
 					email: 'alice@example.com',
 					password: 'pa55word'
-					}) // Removed semicolon here
+					}) 
 				}).then(
 					function (response) {
 						response.text().then(function (text) {
