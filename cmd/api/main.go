@@ -16,11 +16,12 @@ import (
 	_ "github.com/lib/pq"
 	"greenlight.tomcat.net/internal/data"
 	"greenlight.tomcat.net/internal/mailer"
+	"greenlight.tomcat.net/internal/vcs"
 )
 
-// version represents the application version number. This constant is used to track
-// the current version of the API, which can be useful for debugging and monitoring.
-const version = "1.0.0"
+var (
+	version = vcs.Version()
+)
 
 // config holds all runtime configuration settings for the application.
 // This includes network, environment, database, and rate limiter options.
@@ -143,8 +144,18 @@ func main() {
 		return nil
 	})
 
+	// Register a command-line flag to display the application version and exit.
+	displayVersion := flag.Bool("version", false, "Display version and exit")
+
 	// Parse all registered command-line flags and populate the cfg struct
 	flag.Parse()
+
+	// If the version flag is true, print the application version and exit.
+
+	if *displayVersion {
+		fmt.Printf("Version:\t%s\n", version)
+		os.Exit(0)
+	}
 
 	// Create a structured logger that writes log entries to standard output.
 	// This logger is used throughout the application to record events and errors.
