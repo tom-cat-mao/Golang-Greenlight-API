@@ -1,8 +1,9 @@
 package data
 
 import (
-	"database/sql"
 	"errors"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // ErrRecordNotFound is a sentinel error returned when a database query returns no rows.
@@ -33,7 +34,7 @@ type Models struct {
 // allowing all models to share the same database connection.
 // Returns:
 //   - Models: A struct containing initialized MovieModel and UserModel instances
-func NewModels(db *sql.DB) Models {
+func NewModels(db *redis.Client) Models {
 	return Models{
 		Movies:      MovieModel{DB: db},      // Initialize movie model with database connection
 		Users:       UserModel{DB: db},       // Initialize user model with database connection

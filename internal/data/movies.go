@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"greenlight.tomcat.net/internal/validator"
 )
 
@@ -35,7 +36,7 @@ type Movie struct {
 //   - DB: A pointer to a sql.DB connection pool that will be used to execute
 //     database queries and commands.
 type MovieModel struct {
-	DB *sql.DB
+	DB *redis.Client
 }
 
 func ValidateMovie(v *validator.Validator, movie *Movie) {

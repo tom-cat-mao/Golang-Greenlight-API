@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"expvar"
 	"flag"
 	"fmt"
@@ -49,7 +50,10 @@ type config struct {
 	port int
 	env  string
 	db   struct {
-		dsn string
+		dsn          string
+		poolSize     int
+		minIdleConns int
+		maxIdleTime  int
 	}
 	limiter struct {
 		rps     float64
@@ -97,8 +101,17 @@ func main() {
 	// Register command-line flag for the application environment (default: "development")
 	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
 
-	// Register command-line flag for the PostgreSQL DSN, defaulting to the GREENLIGHT_DB_DSN environment variable
-	flag.StringVar(&cfg.db.dsn, "db-dsn", "", "PostgreSQL DSN")
+	// Register command-line flag for the Redis DSN (default: the GREENLIGHT_DB_DSN in Makefile
+	flag.StringVar(&cfg.db.dsn, "db-dsn", "", "Redis DSN")
+
+	// Register command-line flag for the Redis Pool Size (default: 20)
+	flag.IntVar(&cfg.db.poolSize, "redis-pool-size", 20, "Redis Connection Pool Size")
+
+	// Register command-line flag for the Redis minimum idle connection (default: 10)
+	flag.IntVar(&cfg.db.minIdleConns, "redis-min-idle", 10, "Min number of idle connections")
+
+	// Register command-line flag for the Redis connection idletimeout (default: 5s)
+	flag.IntVar(&cfg.db.maxIdleTime, "redis-idle-timeout", 5, "Max time a connection can be idle")
 
 	// Register command-line flag for the rate limiter's maximum requests per second (default: 2)
 	flag.Float64Var(&cfg.limiter.rps, "limiter-rps", 2, "Rate limiter maximum requests per second")
@@ -151,7 +164,7 @@ func main() {
 	// Open a database connection pool. This establishes a connection to the
 	// PostgreSQL database using the provided configuration. The connection pool
 	// allows for efficient reuse of database connections.
-	db, err := openDB(cfg)
+	rdb, err := openRDB(cfg)
 	if err != nil {
 		// If there's an error connecting to the database, log the error and exit.
 		logger.Error("database connection error", "error", err)
@@ -160,7 +173,7 @@ func main() {
 
 	// Close the database connection pool when the main function exits. This ensures
 	// that all database connections are properly closed, releasing resources.
-	defer db.Close()
+	defer rdb.Close()
 
 	// Log a message indicating that the database connection pool has been established.
 	logger.Info("database connection pool established")
@@ -185,7 +198,7 @@ func main() {
 	// Publish database connection pool statistics to the /debug/vars endpoint.
 	// This includes metrics like the number of open connections, idle connections, etc.
 	expvar.Publish("database", expvar.Func(func() any {
-		return db.Stats()
+		return rdb.PoolStats()
 	}))
 
 	// Publish the current Unix timestamp to the /debug/vars endpoint.
@@ -199,7 +212,7 @@ func main() {
 	app := &application{
 		config: cfg,
 		logger: logger,
-		models: data.NewModels(db),
+		models: data.NewModels(rdb),
 		mailer: mailer,
 	}
 
@@ -214,13 +227,26 @@ func main() {
 	}
 }
 
-// openDB creates and configures a PostgreSQL database connection pool using the provided configuration.
-// It validates the connection by:
-// 1. Opening a connection pool with the configured DSN
-// 2. Setting connection pool parameters (max open/idle connections, idle timeout)
-// 3. Performing a health check via PingContext with a 5-second timeout
-// Returns the initialized pool or an error if any step fails.
-func openDB(cfg config) (*redis.Client, error) {
+// create a redis client
+func openRDB(cfg config) (*redis.Client, error) {
 	opt, err := redis.ParseURL(cfg.db.dsn)
-	return redis.NewClient(opt), err
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database connection: %w", err)
+	}
+
+	opt.PoolSize = cfg.db.poolSize
+	opt.MinIdleConns = cfg.db.minIdleConns
+	opt.ConnMaxIdleTime = time.Duration(cfg.db.maxIdleTime)
+
+	rdb := redis.NewClient(opt)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = rdb.Ping(ctx).Err()
+	if err != nil {
+		return nil, fmt.Errorf("redis ping failed: %w", err)
+	}
+
+	return rdb, nil
 }
