@@ -9,14 +9,15 @@ require github.com/lib/pq v1.10.9
 require golang.org/x/time v0.11.0
 
 require (
+	github.com/redis/go-redis/v9 v9.10.0
 	github.com/wneessen/go-mail v0.6.2
 	golang.org/x/crypto v0.37.0
 )
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
-	github.com/go-redis/redis v6.15.9+incompatible // indirect
-	github.com/redis/go-redis v6.15.9+incompatible // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
 	golang.org/x/mod v0.23.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect

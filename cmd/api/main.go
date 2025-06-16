@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"expvar"
 	"flag"
 	"fmt"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"greenlight.tomcat.net/internal/data"
 	"greenlight.tomcat.net/internal/mailer"
 	"greenlight.tomcat.net/internal/vcs"
@@ -50,10 +49,7 @@ type config struct {
 	port int
 	env  string
 	db   struct {
-		dsn          string
-		maxOpenConns int
-		maxIdleConns int
-		maxIdleTime  time.Duration
+		dsn string
 	}
 	limiter struct {
 		rps     float64
@@ -104,15 +100,6 @@ func main() {
 	// Register command-line flag for the PostgreSQL DSN, defaulting to the GREENLIGHT_DB_DSN environment variable
 	flag.StringVar(&cfg.db.dsn, "db-dsn", "", "PostgreSQL DSN")
 
-	// Register command-line flag for the maximum number of open database connections (default: 25)
-	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
-
-	// Register command-line flag for the maximum number of idle database connections (default: 25)
-	flag.IntVar(&cfg.db.maxIdleConns, "db-max-idle-conns", 25, "PostgreSQL max idle connections")
-
-	// Register command-line flag for the maximum idle time for database connections (default: 15 minutes)
-	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max connection idle time")
-
 	// Register command-line flag for the rate limiter's maximum requests per second (default: 2)
 	flag.Float64Var(&cfg.limiter.rps, "limiter-rps", 2, "Rate limiter maximum requests per second")
 
@@ -151,7 +138,6 @@ func main() {
 	flag.Parse()
 
 	// If the version flag is true, print the application version and exit.
-
 	if *displayVersion {
 		fmt.Printf("Version:\t%s\n", version)
 		os.Exit(0)
@@ -234,40 +220,7 @@ func main() {
 // 2. Setting connection pool parameters (max open/idle connections, idle timeout)
 // 3. Performing a health check via PingContext with a 5-second timeout
 // Returns the initialized pool or an error if any step fails.
-func openDB(cfg config) (*sql.DB, error) {
-	// sql.Open() does not establish any connections to the database.
-	// It only validates the DSN and prepares the database connection pool.
-	db, err := sql.Open("postgres", cfg.db.dsn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database connection: %w", err)
-	}
-
-	// Set the maximum number of open connections to the database.
-	// This limits the total number of connections that can be established.
-	db.SetMaxOpenConns(cfg.db.maxOpenConns)
-
-	// Set the maximum number of idle connections in the pool.
-	// These are connections kept ready for immediate reuse.
-	db.SetMaxIdleConns(cfg.db.maxIdleConns)
-
-	// Set the maximum time an idle connection can remain in the pool before being closed.
-	// This helps prevent stale connections from accumulating.
-	db.SetConnMaxIdleTime(cfg.db.maxIdleTime)
-
-	// Create a context with a 5-second timeout. This ensures that the database ping operation
-	// will not hang indefinitely if the database is unresponsive.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Ping the database to check the connection. This sends a simple query to the database
-	// to verify that the connection is alive and the database is accessible.
-	// If the ping fails, it indicates a problem with the database connection.
-	err = db.PingContext(ctx)
-	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("database ping failed: %w", err)
-	}
-
-	// If the ping is successful, the function returns the database connection pool.
-	return db, nil
+func openDB(cfg config) (*redis.Client, error) {
+	opt, err := redis.ParseURL(cfg.db.dsn)
+	return redis.NewClient(opt), err
 }
