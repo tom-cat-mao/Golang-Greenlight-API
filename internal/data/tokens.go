@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"greenlight.tomcat.net/internal/validator"
 )
 
@@ -36,7 +36,7 @@ type Token struct {
 
 // TokenModel struct to include the sql connection
 type TokenModel struct {
-	DB *sql.DB
+	DB *redis.Client
 }
 
 // Generate token for user activation
@@ -80,31 +80,32 @@ func (m TokenModel) New(userID int64, ttl time.Duration, scope string) (*Token, 
 
 // Add the data for a specific token to the table
 func (m TokenModel) Insert(token *Token) error {
-	query := `
-		INSERT INTO tokens (hash, user_id, expiry, scope)
-		VALUES ($1, $2, $3, $4)
-		`
-
-	args := []any{token.Hash, token.UserID, token.Expiry, token.Scope}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	_, err := m.DB.ExecContext(ctx, query, args...)
-	return err
-
+	// query := `
+	// 	INSERT INTO tokens (hash, user_id, expiry, scope)
+	// 	VALUES ($1, $2, $3, $4)
+	// 	`
+	//
+	// args := []any{token.Hash, token.UserID, token.Expiry, token.Scope}
+	//
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel()
+	//
+	// _, err := m.DB.ExecContext(ctx, query, args...)
+	// return err
+	return nil
 }
 
 // Deletes all tokens for a specific user and scope
 func (m TokenModel) DeleteAllForUser(scope string, userID int64) error {
-	query := `
-		DELETE FROM tokens
-		WHERE scope = $1 AND user_id = $2
-		`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	_, err := m.DB.ExecContext(ctx, query, scope, userID)
-	return err
+	// query := `
+	// 	DELETE FROM tokens
+	// 	WHERE scope = $1 AND user_id = $2
+	// 	`
+	//
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel()
+	//
+	// _, err := m.DB.ExecContext(ctx, query, scope, userID)
+	// return err
+	return nil
 }

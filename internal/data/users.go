@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"greenlight.tomcat.net/internal/validator"
 )
@@ -34,7 +35,7 @@ type User struct {
 // with the users table in the database. This follows the repository pattern,
 // keeping database operations separate from business logic.
 type UserModel struct {
-	DB *sql.DB // Database connection pool for executing SQL queries
+	DB *redis.Client // Database connection pool for executing SQL queries
 }
 
 // password holds both the plaintext (for validation, if present) and the bcrypt hash of a user's password.
@@ -137,38 +138,38 @@ func ValidateUser(v *validator.Validator, user *User) {
 // Insert adds a new user record to the database and updates the user struct with generated values.
 // It returns an error if the operation fails, including ErrDuplicateEmail if the email already exists.
 func (m UserModel) Insert(user *User) error {
-	// SQL query to insert a new user and return the generated ID, creation timestamp, and version
-	query := `
-		INSERT INTO users (name, email, password_hash, activated)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, created_at, version
-		`
-
-	// Arguments for the SQL query, extracted from the user struct
-	args := []any{
-		user.Name,
-		user.Email,
-		user.Password.hash,
-		user.Activated,
-	}
-
-	// Create a context with a 3-second timeout to prevent long-running database operations
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel() // Ensure resources are released when function exits
-
-	// Execute the query and scan the returned values into the user struct
-	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&user.ID, &user.CreatedAt, &user.Version)
-	if err != nil {
-		// Handle specific error cases
-		switch {
-		case err.Error() == `pq: duplicate key value violates unique constraint "users_email_key"`:
-			// Return custom error for duplicate email violation
-			return ErrDuplicateEmail
-		default:
-			// Return any other database error
-			return err
-		}
-	}
+	// // SQL query to insert a new user and return the generated ID, creation timestamp, and version
+	// query := `
+	// 	INSERT INTO users (name, email, password_hash, activated)
+	// 	VALUES ($1, $2, $3, $4)
+	// 	RETURNING id, created_at, version
+	// 	`
+	//
+	// // Arguments for the SQL query, extracted from the user struct
+	// args := []any{
+	// 	user.Name,
+	// 	user.Email,
+	// 	user.Password.hash,
+	// 	user.Activated,
+	// }
+	//
+	// // Create a context with a 3-second timeout to prevent long-running database operations
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel() // Ensure resources are released when function exits
+	//
+	// // Execute the query and scan the returned values into the user struct
+	// err := m.DB.QueryRowContext(ctx, query, args...).Scan(&user.ID, &user.CreatedAt, &user.Version)
+	// if err != nil {
+	// 	// Handle specific error cases
+	// 	switch {
+	// 	case err.Error() == `pq: duplicate key value violates unique constraint "users_email_key"`:
+	// 		// Return custom error for duplicate email violation
+	// 		return ErrDuplicateEmail
+	// 	default:
+	// 		// Return any other database error
+	// 		return err
+	// 	}
+	// }
 
 	// Return nil if the operation completed successfully
 	return nil
@@ -178,45 +179,47 @@ func (m UserModel) Insert(user *User) error {
 // It returns a pointer to a User struct if found, or ErrRecordNotFound if no matching record exists.
 // Any other database errors are returned as-is.
 func (m UserModel) GetByEmail(email string) (*User, error) {
-	// SQL query to select user fields by email
-	query := `
-		SELECT id, created_at, name, email, password_hash, activated, version
-		FROM users
-		WHERE email = $1
-		`
+	// // SQL query to select user fields by email
+	// query := `
+	// 	SELECT id, created_at, name, email, password_hash, activated, version
+	// 	FROM users
+	// 	WHERE email = $1
+	// 	`
+	//
+	// // Initialize an empty User struct to hold the result
+	// var user User
+	//
+	// // Create a context with a 3-second timeout to prevent long-running database operations
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel() // Ensure resources are released when function exits
+	//
+	// // Execute the query and scan the result into the User struct fields
+	// err := m.DB.QueryRowContext(ctx, query, email).Scan(
+	// 	&user.ID,
+	// 	&user.CreatedAt,
+	// 	&user.Name,
+	// 	&user.Email,
+	// 	&user.Password.hash,
+	// 	&user.Activated,
+	// 	&user.Version,
+	// )
+	//
+	// // Handle any errors that occurred during query execution
+	// if err != nil {
+	// 	switch {
+	// 	// Special case: return custom error when no matching record is found
+	// 	case errors.Is(err, sql.ErrNoRows):
+	// 		return nil, ErrRecordNotFound
+	// 	// For all other errors, return them directly
+	// 	default:
+	// 		return nil, err
+	// 	}
+	// }
+	//
+	// // Return the populated user struct if no errors occurred
+	// return &user, nil
 
-	// Initialize an empty User struct to hold the result
-	var user User
-
-	// Create a context with a 3-second timeout to prevent long-running database operations
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel() // Ensure resources are released when function exits
-
-	// Execute the query and scan the result into the User struct fields
-	err := m.DB.QueryRowContext(ctx, query, email).Scan(
-		&user.ID,
-		&user.CreatedAt,
-		&user.Name,
-		&user.Email,
-		&user.Password.hash,
-		&user.Activated,
-		&user.Version,
-	)
-
-	// Handle any errors that occurred during query execution
-	if err != nil {
-		switch {
-		// Special case: return custom error when no matching record is found
-		case errors.Is(err, sql.ErrNoRows):
-			return nil, ErrRecordNotFound
-		// For all other errors, return them directly
-		default:
-			return nil, err
-		}
-	}
-
-	// Return the populated user struct if no errors occurred
-	return &user, nil
+	return nil, nil
 }
 
 // Update modifies a user record in the database. It updates all fields except ID and CreatedAt,
@@ -227,42 +230,42 @@ func (m UserModel) Update(user *User) error {
 	// SQL query to update user fields and increment version number.
 	// The WHERE clause ensures we only update if the version matches (optimistic locking).
 	// RETURNING clause gives us the new version number.
-	query := `
-		UPDATE users
-		SET name = $1, email = $2, password_hash = $3, activated = $4, version = version + 1
-		WHERE id = $5 AND version = $6
-		RETURNING version
-		`
-
-	// Prepare arguments for the query in the correct order
-	args := []any{
-		user.Name,
-		user.Email,
-		user.Password.hash,
-		user.Activated,
-		user.ID,
-		user.Version,
-	}
-
-	// Create a context with a 3-second timeout to prevent long-running database operations
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel() // Ensure resources are released when function exits
-
-	// Execute the query and scan the new version number into the user struct
-	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&user.Version)
-	if err != nil {
-		switch {
-		// Handle case where email already exists in database (unique constraint violation)
-		case err.Error() == `pq: duplicate key value violates unique constraint "users_email_key"`:
-			return ErrDuplicateEmail
-		// Handle case where version doesn't match (optimistic locking conflict)
-		case errors.Is(err, sql.ErrNoRows):
-			return ErrEditConflict
-		// For all other errors, return them directly
-		default:
-			return err
-		}
-	}
+	// query := `
+	// 	UPDATE users
+	// 	SET name = $1, email = $2, password_hash = $3, activated = $4, version = version + 1
+	// 	WHERE id = $5 AND version = $6
+	// 	RETURNING version
+	// 	`
+	//
+	// // Prepare arguments for the query in the correct order
+	// args := []any{
+	// 	user.Name,
+	// 	user.Email,
+	// 	user.Password.hash,
+	// 	user.Activated,
+	// 	user.ID,
+	// 	user.Version,
+	// }
+	//
+	// // Create a context with a 3-second timeout to prevent long-running database operations
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel() // Ensure resources are released when function exits
+	//
+	// // Execute the query and scan the new version number into the user struct
+	// err := m.DB.QueryRowContext(ctx, query, args...).Scan(&user.Version)
+	// if err != nil {
+	// 	switch {
+	// 	// Handle case where email already exists in database (unique constraint violation)
+	// 	case err.Error() == `pq: duplicate key value violates unique constraint "users_email_key"`:
+	// 		return ErrDuplicateEmail
+	// 	// Handle case where version doesn't match (optimistic locking conflict)
+	// 	case errors.Is(err, sql.ErrNoRows):
+	// 		return ErrEditConflict
+	// 	// For all other errors, return them directly
+	// 	default:
+	// 		return err
+	// 	}
+	// }
 
 	// Return nil if the update was successful
 	return nil
@@ -272,51 +275,52 @@ func (m UserModel) Update(user *User) error {
 func (m UserModel) GetForToken(tokenScope, tokenPlaintext string) (*User, error) {
 	// Calculate the SHA-256 hash of the plaintext token provided by the client.
 	// Remember that this returns a byte *array* with length 32, not a slice
-	tokenHash := sha256.Sum256([]byte(tokenPlaintext))
-
-	// Set up the SQL query
-	query := `
-		SELECT users.id, users.created_at, users.name, users.email, users.password_hash, users.activated, users.version
-		FROM users
-		INNER JOIN tokens
-		ON users.id = tokens.user_id
-		WHERE tokens.hash = $1
-		AND tokens.scope = $2
-		AND tokens.expiry > $3
-		`
-
-	// Create a slice containing the query arguments.
-	// use the [:] operator to get a slice containing the token hash.
-	// pass the current time as the value to check against the token expiry
-	args := []any{tokenHash[:], tokenScope, time.Now()}
-
-	var user User
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	// Execute the query, scanning the return values into a User struct.
-	// If no matching record is found we return an ErrRecordNotFound error
-	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
-		&user.ID,
-		&user.CreatedAt,
-		&user.Name,
-		&user.Email,
-		&user.Password.hash,
-		&user.Activated,
-		&user.Version,
-	)
-	if err != nil {
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			return nil, ErrRecordNotFound
-		default:
-			return nil, err
-		}
-	}
-
-	// Return the matching user
-	return &user, nil
+	// tokenHash := sha256.Sum256([]byte(tokenPlaintext))
+	//
+	// // Set up the SQL query
+	// query := `
+	// 	SELECT users.id, users.created_at, users.name, users.email, users.password_hash, users.activated, users.version
+	// 	FROM users
+	// 	INNER JOIN tokens
+	// 	ON users.id = tokens.user_id
+	// 	WHERE tokens.hash = $1
+	// 	AND tokens.scope = $2
+	// 	AND tokens.expiry > $3
+	// 	`
+	//
+	// // Create a slice containing the query arguments.
+	// // use the [:] operator to get a slice containing the token hash.
+	// // pass the current time as the value to check against the token expiry
+	// args := []any{tokenHash[:], tokenScope, time.Now()}
+	//
+	// var user User
+	//
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel()
+	//
+	// // Execute the query, scanning the return values into a User struct.
+	// // If no matching record is found we return an ErrRecordNotFound error
+	// err := m.DB.QueryRowContext(ctx, query, args...).Scan(
+	// 	&user.ID,
+	// 	&user.CreatedAt,
+	// 	&user.Name,
+	// 	&user.Email,
+	// 	&user.Password.hash,
+	// 	&user.Activated,
+	// 	&user.Version,
+	// )
+	// if err != nil {
+	// 	switch {
+	// 	case errors.Is(err, sql.ErrNoRows):
+	// 		return nil, ErrRecordNotFound
+	// 	default:
+	// 		return nil, err
+	// 	}
+	// }
+	//
+	// // Return the matching user
+	// return &user, nil
+	return nil, nil
 }
 
 // Check whether a user is an anonymous user

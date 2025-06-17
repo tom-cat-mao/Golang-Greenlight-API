@@ -2,7 +2,6 @@ package data
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -67,24 +66,26 @@ func (m MovieModel) Insert(movie *Movie) error {
 	// Define the SQL query for inserting a new movie record.
 	// The query includes parameters for title, year, runtime, and genres,
 	// and returns the auto-generated ID, creation timestamp, and version.
-	query := `
-			INSERT INTO MOVIES (title, year, runtime, genres)
-			VALUES ($1, $2, $3, $4)
-			RETURNING id, created_at, version
-		`
+	// query := `
+	// 		INSERT INTO MOVIES (title, year, runtime, genres)
+	// 		VALUES ($1, $2, $3, $4)
+	// 		RETURNING id, created_at, version
+	// 	`
+	//
+	// // Prepare the arguments for the query, converting the genres slice to a PostgreSQL array
+	// args := []any{movie.Title, movie.Year, movie.Runtime, pq.Array(movie.Genres)}
+	//
+	// // Create a context with a 3-second timeout to ensure the database operation does not hang indefinitely.
+	// // The cancel function should be called to release resources once the operation completes.
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel() // Ensure the context is cancelled to avoid resource leaks.
+	//
+	// // Execute the SQL insert statement and scan the generated ID, creation timestamp,
+	// // and version number into the corresponding fields of the provided movie struct.
+	// // This ensures the movie struct is updated with the database-generated values.
+	// return m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
 
-	// Prepare the arguments for the query, converting the genres slice to a PostgreSQL array
-	args := []any{movie.Title, movie.Year, movie.Runtime, pq.Array(movie.Genres)}
-
-	// Create a context with a 3-second timeout to ensure the database operation does not hang indefinitely.
-	// The cancel function should be called to release resources once the operation completes.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel() // Ensure the context is cancelled to avoid resource leaks.
-
-	// Execute the SQL insert statement and scan the generated ID, creation timestamp,
-	// and version number into the corresponding fields of the provided movie struct.
-	// This ensures the movie struct is updated with the database-generated values.
-	return m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
+	return nil
 }
 
 // Get retrieves a movie record from the database by its ID.
