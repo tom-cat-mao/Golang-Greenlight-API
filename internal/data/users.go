@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -35,7 +36,7 @@ type User struct {
 // with the users table in the database. This follows the repository pattern,
 // keeping database operations separate from business logic.
 type UserModel struct {
-	DB *redis.Client // Database connection pool for executing SQL queries
+	RDB *redis.Client // Database connection pool for executing SQL queries
 }
 
 // password holds both the plaintext (for validation, if present) and the bcrypt hash of a user's password.
@@ -170,6 +171,30 @@ func (m UserModel) Insert(user *User) error {
 	// 		return err
 	// 	}
 	// }
+
+	ctxF, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelF()
+
+	userNextID, err := m.RDB.Incr(ctxF, "user:nextID").Result()
+	if err != nil {
+		return err
+	}
+	userID := fmt.Sprintf("userID:%v", userNextID)
+
+	ctxS, cancelS := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelS()
+
+	pipe := m.RDB.Pipeline()
+
+	pipe.HSetNX(ctxS, userID, "name", user.Name)
+	pipe.HSetNX(ctxS, userID, "email", user.Email)
+	pipe.HSetNX(ctxS, userID, "password", user.Password.hash)
+	pipe.HSetNX(ctxS, userID, "activated", user.Activated)
+
+	_, err = pipe.Exec(ctxS)
+	if err != nil {
+		return err
+	}
 
 	// Return nil if the operation completed successfully
 	return nil

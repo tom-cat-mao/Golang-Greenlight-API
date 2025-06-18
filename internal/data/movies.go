@@ -2,11 +2,11 @@ package data
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"greenlight.tomcat.net/internal/validator"
 )
@@ -35,7 +35,7 @@ type Movie struct {
 //   - DB: A pointer to a sql.DB connection pool that will be used to execute
 //     database queries and commands.
 type MovieModel struct {
-	DB *redis.Client
+	RDB *redis.Client
 }
 
 func ValidateMovie(v *validator.Validator, movie *Movie) {
@@ -84,6 +84,34 @@ func (m MovieModel) Insert(movie *Movie) error {
 	// // and version number into the corresponding fields of the provided movie struct.
 	// // This ensures the movie struct is updated with the database-generated values.
 	// return m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
+	ctxF, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelF()
+
+	movieNextID, err := m.RDB.Incr(ctxF, "movie:nextID").Result()
+	if err != nil {
+		return err
+	}
+	movieID := fmt.Sprintf("movieID:%v", movieNextID)
+
+	ctxS, cancelS := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelS()
+
+	pipe := m.RDB.Pipeline()
+
+	genresJSON, err := json.Marshal(movie.Genres)
+	if err != nil {
+		return err
+	}
+
+	pipe.HSetNX(ctxS, movieID, "title", movie.Title)
+	pipe.HSetNX(ctxS, movieID, "year", movie.Year)
+	pipe.HSetNX(ctxS, movieID, "runtime", movie.Runtime)
+	pipe.HSetNX(ctxS, movieID, "genres", genresJSON)
+
+	_, err = pipe.Exec(ctxS)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -98,52 +126,54 @@ func (m MovieModel) Insert(movie *Movie) error {
 //   - ErrRecordNotFound if the ID doesn't exist or is invalid
 //   - Database errors for other failures
 func (m MovieModel) Get(id int64) (*Movie, error) {
-	// Validate that the ID is positive
-	if id < 1 {
-		return nil, ErrRecordNotFound
-	}
+	// // Validate that the ID is positive
+	// if id < 1 {
+	// 	return nil, ErrRecordNotFound
+	// }
+	//
+	// // Define the SQL query to select a movie by ID
+	// // The query retrieves all movie fields from the database
+	// query := `
+	// 	SELECT id, created_at, title, year, runtime, genres, version
+	// 	FROM movies
+	// 	WHERE id = $1
+	// 	`
+	//
+	// // Initialize an empty Movie struct to hold the retrieved data
+	// var movie Movie
+	//
+	// // Create a context with a 3-second timeout to ensure the database query does not hang indefinitely.
+	// // The cancel function should be called to release resources once the operation completes.
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel() // Ensure the context is cancelled to avoid resource leaks.
+	//
+	// // Execute the SQL query with a context timeout and scan the result into the movie struct fields.
+	// // pq.Array is used to convert the PostgreSQL genres array into a Go slice.
+	// err := m.DB.QueryRowContext(ctx, query, id).Scan(
+	// 	&movie.ID,
+	// 	&movie.CreatedAt,
+	// 	&movie.Title,
+	// 	&movie.Year,
+	// 	&movie.Runtime,
+	// 	pq.Array(&movie.Genres),
+	// 	&movie.Version,
+	// )
+	// // Handle any errors that occurred during the query execution
+	// if err != nil {
+	// 	switch {
+	// 	// If no rows were found, return our custom ErrRecordNotFound error
+	// 	case errors.Is(err, sql.ErrNoRows):
+	// 		return nil, ErrRecordNotFound
+	// 	// For all other errors, return them directly
+	// 	default:
+	// 		return nil, err
+	// 	}
+	// }
+	//
+	// // Return a pointer to the populated movie struct
+	// return &movie, nil
 
-	// Define the SQL query to select a movie by ID
-	// The query retrieves all movie fields from the database
-	query := `
-		SELECT id, created_at, title, year, runtime, genres, version
-		FROM movies
-		WHERE id = $1
-		`
-
-	// Initialize an empty Movie struct to hold the retrieved data
-	var movie Movie
-
-	// Create a context with a 3-second timeout to ensure the database query does not hang indefinitely.
-	// The cancel function should be called to release resources once the operation completes.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel() // Ensure the context is cancelled to avoid resource leaks.
-
-	// Execute the SQL query with a context timeout and scan the result into the movie struct fields.
-	// pq.Array is used to convert the PostgreSQL genres array into a Go slice.
-	err := m.DB.QueryRowContext(ctx, query, id).Scan(
-		&movie.ID,
-		&movie.CreatedAt,
-		&movie.Title,
-		&movie.Year,
-		&movie.Runtime,
-		pq.Array(&movie.Genres),
-		&movie.Version,
-	)
-	// Handle any errors that occurred during the query execution
-	if err != nil {
-		switch {
-		// If no rows were found, return our custom ErrRecordNotFound error
-		case errors.Is(err, sql.ErrNoRows):
-			return nil, ErrRecordNotFound
-		// For all other errors, return them directly
-		default:
-			return nil, err
-		}
-	}
-
-	// Return a pointer to the populated movie struct
-	return &movie, nil
+	return nil, nil
 }
 
 // Update modifies an existing movie record in the database using optimistic concurrency control.
@@ -155,52 +185,52 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 //   - Database errors for connection/query failures
 //   - sql.ErrNoRows if no record was found (though this is converted to ErrEditConflict)
 func (m MovieModel) Update(movie Movie) error {
-	// Define the SQL query for updating a movie record with optimistic concurrency control.
-	// The query performs an atomic update that:
-	// - Sets all movie fields (title, year, runtime, genres)
-	// - Increments the version number to prevent race conditions
-	// - Uses both ID and current version in WHERE clause to ensure:
-	//   * The correct record is targeted (by ID)
-	//   * The record hasn't been modified since it was fetched (by version)
-	// - Returns the new version number via RETURNING clause for verification
-	query := `
-		UPDATE movies
-		SET title = $1, year = $2, runtime = $3, genres = $4, version = version + 1
-		WHERE id = $5 AND version = $6
-		RETURNING version
-		`
-
-	// Prepare the arguments for the query in the correct order
-	// Note: pq.Array() is used to properly handle the PostgreSQL array type for genres
-	args := []any{
-		movie.Title,
-		movie.Year,
-		movie.Runtime,
-		pq.Array(movie.Genres),
-		movie.ID,
-		movie.Version,
-	}
-
-	// Create a context with a 3-second timeout to ensure the update operation does not hang indefinitely.
-	// The cancel function should be called to release resources once the operation completes.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel() // Ensure the context is cancelled to avoid resource leaks.
-
-	// Execute the update query and attempt to scan the new version number into the movie struct.
-	// If the update fails due to a version mismatch (i.e., another process has modified the record),
-	// the query will return sql.ErrNoRows, which we translate to ErrEditConflict to signal a concurrency conflict.
-	// Any other error is returned as-is.
-	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.Version)
-	if err != nil {
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			// No rows updated: the record was changed by another process or does not exist.
-			return ErrEditConflict
-		default:
-			// Return any other database error encountered.
-			return err
-		}
-	}
+	// // Define the SQL query for updating a movie record with optimistic concurrency control.
+	// // The query performs an atomic update that:
+	// // - Sets all movie fields (title, year, runtime, genres)
+	// // - Increments the version number to prevent race conditions
+	// // - Uses both ID and current version in WHERE clause to ensure:
+	// //   * The correct record is targeted (by ID)
+	// //   * The record hasn't been modified since it was fetched (by version)
+	// // - Returns the new version number via RETURNING clause for verification
+	// query := `
+	// 	UPDATE movies
+	// 	SET title = $1, year = $2, runtime = $3, genres = $4, version = version + 1
+	// 	WHERE id = $5 AND version = $6
+	// 	RETURNING version
+	// 	`
+	//
+	// // Prepare the arguments for the query in the correct order
+	// // Note: pq.Array() is used to properly handle the PostgreSQL array type for genres
+	// args := []any{
+	// 	movie.Title,
+	// 	movie.Year,
+	// 	movie.Runtime,
+	// 	pq.Array(movie.Genres),
+	// 	movie.ID,
+	// 	movie.Version,
+	// }
+	//
+	// // Create a context with a 3-second timeout to ensure the update operation does not hang indefinitely.
+	// // The cancel function should be called to release resources once the operation completes.
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel() // Ensure the context is cancelled to avoid resource leaks.
+	//
+	// // Execute the update query and attempt to scan the new version number into the movie struct.
+	// // If the update fails due to a version mismatch (i.e., another process has modified the record),
+	// // the query will return sql.ErrNoRows, which we translate to ErrEditConflict to signal a concurrency conflict.
+	// // Any other error is returned as-is.
+	// err := m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.Version)
+	// if err != nil {
+	// 	switch {
+	// 	case errors.Is(err, sql.ErrNoRows):
+	// 		// No rows updated: the record was changed by another process or does not exist.
+	// 		return ErrEditConflict
+	// 	default:
+	// 		// Return any other database error encountered.
+	// 		return err
+	// 	}
+	// }
 
 	return nil
 }
@@ -210,109 +240,110 @@ func (m MovieModel) Update(movie Movie) error {
 //   - ErrRecordNotFound if the ID is invalid (<1) or no rows were deleted
 //   - Any database error encountered during execution
 func (m MovieModel) Delete(id int64) error {
-	// Validate the ID; must be a positive integer
-	if id < 1 {
-		return ErrRecordNotFound
-	}
-
-	// SQL query to delete the movie with the specified ID
-	query := `
-		DELETE FROM movies
-		WHERE id = $1
-		`
-
-	// Create a context with a 3-second timeout to ensure the delete operation does not hang indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	// Ensure the context is cancelled to free up resources once the operation completes.
-	defer cancel()
-
-	// Execute the SQL DELETE statement to remove the movie with the specified ID.
-	result, err := m.DB.ExecContext(ctx, query, id)
-	if err != nil {
-		// If an error occurs during the execution of the DELETE statement, return it.
-		return err
-	}
-
-	// Check how many rows were affected (should be 1 if deleted)
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		// Return any error encountered while checking affected rows
-		return err
-	}
-
-	// If no rows were affected, the movie was not found
-	if rowsAffected == 0 {
-		return ErrRecordNotFound
-	}
-
+	// // Validate the ID; must be a positive integer
+	// if id < 1 {
+	// 	return ErrRecordNotFound
+	// }
+	//
+	// // SQL query to delete the movie with the specified ID
+	// query := `
+	// 	DELETE FROM movies
+	// 	WHERE id = $1
+	// 	`
+	//
+	// // Create a context with a 3-second timeout to ensure the delete operation does not hang indefinitely.
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// // Ensure the context is cancelled to free up resources once the operation completes.
+	// defer cancel()
+	//
+	// // Execute the SQL DELETE statement to remove the movie with the specified ID.
+	// result, err := m.DB.ExecContext(ctx, query, id)
+	// if err != nil {
+	// 	// If an error occurs during the execution of the DELETE statement, return it.
+	// 	return err
+	// }
+	//
+	// // Check how many rows were affected (should be 1 if deleted)
+	// rowsAffected, err := result.RowsAffected()
+	// if err != nil {
+	// 	// Return any error encountered while checking affected rows
+	// 	return err
+	// }
+	//
+	// // If no rows were affected, the movie was not found
+	// if rowsAffected == 0 {
+	// 	return ErrRecordNotFound
+	// }
+	//
 	// Successful deletion
 	return nil
 }
 
 func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, Metadata, error) {
-	query := fmt.Sprintf(`
-		SELECT count(*) OVER(), id, created_at, title, year, runtime, genres, version
-		FROM movies
-		WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
-		AND (genres @> $2 OR $2 = '{}')
-		ORDER BY %s %s, id ASC
-		LIMIT $3 OFFSET $4
-		`, filters.sortColumn(), filters.sortDirection())
-	// Create a context with a 3-second timeout to avoid hanging queries.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	// Prepare the arguments for the SQL query:
-	// - $1: title filter for full-text search (empty string means no filtering)
-	// - $2: genres filter as a Postgres array (empty array means no filtering)
-	// - $3: limit for pagination (maximum number of results per page)
-	// - $4: offset for pagination (number of results to skip)
-	args := []any{title, pq.Array(genres), filters.limit(), filters.offset()}
-
-	// Execute the SQL query using the constructed query string and arguments for filtering, sorting, and pagination.
-	rows, err := m.DB.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, Metadata{}, err
-	}
-	// Ensure the rows are closed after processing to free up database resources.
-	defer rows.Close()
-
-	// Initialize a variable to store the total number of records returned by the query.
-	totalRecords := 0
-	// Initialize a slice to hold pointers to Movie structs for the result set.
-	movies := []*Movie{}
-
-	// Iterate over the rows in the result set.
-	for rows.Next() {
-		var movie Movie
-
-		// Scan the current row into the movie struct.
-		err := rows.Scan(
-			&totalRecords,
-			&movie.ID,
-			&movie.CreatedAt,
-			&movie.Title,
-			&movie.Year,
-			&movie.Runtime,
-			pq.Array(&movie.Genres),
-			&movie.Version,
-		)
-		if err != nil {
-			return nil, Metadata{}, err
-		}
-
-		// Append the movie to the result slice.
-		movies = append(movies, &movie)
-	}
-
-	// Check for any errors encountered during iteration.
-	if err = rows.Err(); err != nil {
-		return nil, Metadata{}, err
-	}
-
-	// Calculate pagination metadata (current page, page size, total records, etc.)
-	// using the totalRecords count and the current filter settings.
-	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
-
-	return movies, metadata, nil
+	// query := fmt.Sprintf(`
+	// 	SELECT count(*) OVER(), id, created_at, title, year, runtime, genres, version
+	// 	FROM movies
+	// 	WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
+	// 	AND (genres @> $2 OR $2 = '{}')
+	// 	ORDER BY %s %s, id ASC
+	// 	LIMIT $3 OFFSET $4
+	// 	`, filters.sortColumn(), filters.sortDirection())
+	// // Create a context with a 3-second timeout to avoid hanging queries.
+	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// defer cancel()
+	//
+	// // Prepare the arguments for the SQL query:
+	// // - $1: title filter for full-text search (empty string means no filtering)
+	// // - $2: genres filter as a Postgres array (empty array means no filtering)
+	// // - $3: limit for pagination (maximum number of results per page)
+	// // - $4: offset for pagination (number of results to skip)
+	// args := []any{title, pq.Array(genres), filters.limit(), filters.offset()}
+	//
+	// // Execute the SQL query using the constructed query string and arguments for filtering, sorting, and pagination.
+	// rows, err := m.DB.QueryContext(ctx, query, args...)
+	// if err != nil {
+	// 	return nil, Metadata{}, err
+	// }
+	// // Ensure the rows are closed after processing to free up database resources.
+	// defer rows.Close()
+	//
+	// // Initialize a variable to store the total number of records returned by the query.
+	// totalRecords := 0
+	// // Initialize a slice to hold pointers to Movie structs for the result set.
+	// movies := []*Movie{}
+	//
+	// // Iterate over the rows in the result set.
+	// for rows.Next() {
+	// 	var movie Movie
+	//
+	// 	// Scan the current row into the movie struct.
+	// 	err := rows.Scan(
+	// 		&totalRecords,
+	// 		&movie.ID,
+	// 		&movie.CreatedAt,
+	// 		&movie.Title,
+	// 		&movie.Year,
+	// 		&movie.Runtime,
+	// 		pq.Array(&movie.Genres),
+	// 		&movie.Version,
+	// 	)
+	// 	if err != nil {
+	// 		return nil, Metadata{}, err
+	// 	}
+	//
+	// 	// Append the movie to the result slice.
+	// 	movies = append(movies, &movie)
+	// }
+	//
+	// // Check for any errors encountered during iteration.
+	// if err = rows.Err(); err != nil {
+	// 	return nil, Metadata{}, err
+	// }
+	//
+	// // Calculate pagination metadata (current page, page size, total records, etc.)
+	// // using the totalRecords count and the current filter settings.
+	// metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
+	//
+	// return movies, metadata, nil
+	return []*Movie{}, Metadata{}, nil
 }
