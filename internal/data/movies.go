@@ -18,13 +18,14 @@ import (
 // - Year, Runtime, and Genres are omitted from JSON if empty
 // - All other fields are included in JSON output by default
 type Movie struct {
-	ID        int64     `json:"id"`
-	CreatedAt time.Time `json:"-"`
-	Title     string    `json:"title"`
-	Year      int32     `json:"year,omitempty"`
-	Runtime   Runtime   `json:"runtime,omitempty"`
-	Genres    []string  `json:"genres,omitempty"`
-	Version   int32     `json:"version"`
+	ID         int64     `json:"id"`
+	CreatedAt  time.Time `redis:"created_at" json:"-"`
+	Title      string    `redis:"title" json:"title"`
+	Year       int32     `json:"year,omitempty"`
+	Runtime    Runtime   `redis:"runtime" json:"runtime,omitempty"`
+	Genres     []string  `json:"genres,omitempty"`
+	GenresJSON string    `redis:"genres json:"-"`
+	Version    int32     `redis:"version" json:"version"`
 }
 
 // MovieModel wraps a sql.DB connection pool and provides methods for interacting
@@ -84,32 +85,47 @@ func (m MovieModel) Insert(movie *Movie) error {
 	// // and version number into the corresponding fields of the provided movie struct.
 	// // This ensures the movie struct is updated with the database-generated values.
 	// return m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
+
+	// Create the First context with a 3-second timeout to prevent long-running redis operations
 	ctxF, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelF()
 
+	// Get  the movieNextID from the movie:nextID key
 	movieNextID, err := m.RDB.Incr(ctxF, "movie:nextID").Result()
 	if err != nil {
 		return err
 	}
+	// Format the movieID key with the certain prefix
 	movieID := fmt.Sprintf("movieID:%v", movieNextID)
 
+	// Create the create time and version value
+	timestamp := time.Now().UTC()
+	version := 1
+
+	// Create the Second context with a second timeout to prevent long-running redis operations
 	ctxS, cancelS := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelS()
 
+	// Create a redis pipeline to run the commands simutinously
 	pipe := m.RDB.Pipeline()
 
+	// Convert the string array to a json string to store in the redis hash
 	genresJSON, err := json.Marshal(movie.Genres)
 	if err != nil {
 		return err
 	}
 
+	// Store tile, year, runtime, genres, created_at and version
+	// into the redis hash
 	pipe.HSetNX(ctxS, movieID, "title", movie.Title)
 	pipe.HSetNX(ctxS, movieID, "year", movie.Year)
 	pipe.HSetNX(ctxS, movieID, "runtime", movie.Runtime)
 	pipe.HSetNX(ctxS, movieID, "genres", genresJSON)
+	pipe.HSetNX(ctxS, movieID, "created_at", timestamp)
+	pipe.HSetNX(ctxS, movieID, "version", version)
 
-	_, err = pipe.Exec(ctxS)
-	if err != nil {
+	// Execute the pipeline and deal with the error
+	if _, err := pipe.Exec(ctxS); err != nil {
 		return err
 	}
 
@@ -127,9 +143,9 @@ func (m MovieModel) Insert(movie *Movie) error {
 //   - Database errors for other failures
 func (m MovieModel) Get(id int64) (*Movie, error) {
 	// // Validate that the ID is positive
-	// if id < 1 {
-	// 	return nil, ErrRecordNotFound
-	// }
+	if id < 1 {
+		return nil, ErrRecordNotFound
+	}
 	//
 	// // Define the SQL query to select a movie by ID
 	// // The query retrieves all movie fields from the database
@@ -137,16 +153,30 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	// 	SELECT id, created_at, title, year, runtime, genres, version
 	// 	FROM movies
 	// 	WHERE id = $1
-	// 	`
-	//
-	// // Initialize an empty Movie struct to hold the retrieved data
-	// var movie Movie
-	//
-	// // Create a context with a 3-second timeout to ensure the database query does not hang indefinitely.
-	// // The cancel function should be called to release resources once the operation completes.
-	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	// defer cancel() // Ensure the context is cancelled to avoid resource leaks.
-	//
+
+	// Initialize an empty Movie struct to hold the retrieved data
+	var movie Movie
+
+	// Create a context with a 3-second timeout to ensure the redis operations does not hang indefinitely.
+	// The cancel function should be called to release resources once the operation completes.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel() // Ensure the context is cancelled to avoid resource leaks.
+
+	// Get the movie with the movieID key and handle the error
+	if err := m.RDB.HGetAll(ctx, fmt.Sprintf("movieID:%v", id)).Scan(&movie); err != nil {
+		switch {
+		case errors.Is(err, redis.Nil):
+			return nil, ErrRecordNotFound
+		default:
+			return nil, err
+		}
+	}
+
+	// Unwrapped the json string into string array
+	if err := json.Unmarshal([]byte(movie.GenresJSON), &movie.Genres); err != nil {
+		return nil, err
+	}
+
 	// // Execute the SQL query with a context timeout and scan the result into the movie struct fields.
 	// // pq.Array is used to convert the PostgreSQL genres array into a Go slice.
 	// err := m.DB.QueryRowContext(ctx, query, id).Scan(
@@ -173,7 +203,7 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	// // Return a pointer to the populated movie struct
 	// return &movie, nil
 
-	return nil, nil
+	return &movie, nil
 }
 
 // Update modifies an existing movie record in the database using optimistic concurrency control.

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os/user"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -23,13 +24,13 @@ var (
 
 // User represents a user in the system.
 type User struct {
-	ID        int64     `json:"id"`         // Unique identifier for the user.
-	CreatedAt time.Time `json:"created_at"` // Timestamp when the user was created.
-	Name      string    `json:"name"`       // Name of the user.
-	Email     string    `json:"email"`      // Email address of the user.
-	Password  password  `json:"-"`          // Hashed password (not exposed in JSON).
-	Activated bool      `json:"activated"`  // Indicates if the user's account is activated.
-	Version   int       `json:"-"`          // Version number for optimistic concurrency control (not exposed in JSON).
+	ID        int64     `redis:"id" json:"id"`                 // Unique identifier for the user.
+	CreatedAt time.Time `redis:"created_at" json:"created_at"` // Timestamp when the user was created.
+	Name      string    `redis:"name" json:"name"`             // Name of the user.
+	Email     string    `redis:"email" json:"email"`           // Email address of the user.
+	Password  password  `redis:"password" json:"-"`            // Hashed password (not exposed in JSON).
+	Activated bool      `redis:"activated" json:"activated"`   // Indicates if the user's account is activated.
+	Version   int       `redis:"version" json:"-"`             // Version number for optimistic concurrency control (not exposed in JSON).
 }
 
 // UserModel wraps a sql.DB connection pool and provides methods for interacting
@@ -171,28 +172,44 @@ func (m UserModel) Insert(user *User) error {
 	// 		return err
 	// 	}
 	// }
-
+	// Create the first context with a 3-second timeout to prevent long-running redis operations
+	// to get the user:nextID
 	ctxF, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelF()
 
+	// Get the userNextID from the user:nextID key
 	userNextID, err := m.RDB.Incr(ctxF, "user:nextID").Result()
 	if err != nil {
 		return err
 	}
-	userID := fmt.Sprintf("userID:%v", userNextID)
 
+	// Format the userID and userEmail key with the certain prefix
+	userID := fmt.Sprintf("userID:%v", userNextID)
+	userEmail := fmt.Sprintf("userEmail:%v", user.Email)
+
+	// Create the Second context with a 3-second timeout to prevent long-running redis operations
+	// in piplien which will create a hash to store the name, email, password(hashed), activated information
+	// and cretae a email-ID set to find the ID with email
 	ctxS, cancelS := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelS()
 
+	// Create a redis pipeline to run the command simutinously
 	pipe := m.RDB.Pipeline()
 
 	pipe.HSetNX(ctxS, userID, "name", user.Name)
 	pipe.HSetNX(ctxS, userID, "email", user.Email)
 	pipe.HSetNX(ctxS, userID, "password", user.Password.hash)
 	pipe.HSetNX(ctxS, userID, "activated", user.Activated)
+	pipe.SetNX(ctxS, userEmail, userNextID, 0)
 
-	_, err = pipe.Exec(ctxS)
-	if err != nil {
+	if _, err := pipe.Exec(ctxS); err != nil {
+		return err
+	}
+
+	// After all execution
+	// increase the user:nextID in the redis
+	// in order to get the next ID for the new user
+	if err := m.RDB.Incr(ctxS, "user:nextID").Err(); err != nil {
 		return err
 	}
 
@@ -211,13 +228,39 @@ func (m UserModel) GetByEmail(email string) (*User, error) {
 	// 	WHERE email = $1
 	// 	`
 	//
-	// // Initialize an empty User struct to hold the result
-	// var user User
-	//
-	// // Create a context with a 3-second timeout to prevent long-running database operations
-	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	// defer cancel() // Ensure resources are released when function exits
-	//
+
+	// Create the First context with a 3-second timeout to prevent long-running redis operations
+	ctxF, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelF() // Ensure resources are released when function exits
+
+	// Format the userEmail with a prefix
+	userEmail := fmt.Sprintf("userEmail:%v", email)
+
+	// Get the userID from the email-id set
+	userID, err := m.RDB.Get(ctxF, userEmail).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize an empty User struct to hold the result
+	var user User
+
+	// Create the Second context with a 3-second timeout to prevent long-running redis operations
+	ctxS, cancelS := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelS()
+
+	// Get the user with the userID key and handle the error
+	if err := m.RDB.HGetAll(ctxS, fmt.Sprintf("movieID:%v", userID)).Scan(&user); err != nil {
+		switch {
+		// 	// Special case: return custom error when no matching record is found
+		case errors.Is(err, redis.Nil):
+			return nil, ErrRecordNotFound
+		// For all other errors, return them directly
+		default:
+			return nil, err
+		}
+	}
+
 	// // Execute the query and scan the result into the User struct fields
 	// err := m.DB.QueryRowContext(ctx, query, email).Scan(
 	// 	&user.ID,
@@ -240,11 +283,9 @@ func (m UserModel) GetByEmail(email string) (*User, error) {
 	// 		return nil, err
 	// 	}
 	// }
-	//
-	// // Return the populated user struct if no errors occurred
-	// return &user, nil
 
-	return nil, nil
+	// Return the populated user struct if no errors occurred
+	return &user, nil
 }
 
 // Update modifies a user record in the database. It updates all fields except ID and CreatedAt,
