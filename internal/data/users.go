@@ -3,10 +3,8 @@ package data
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"errors"
 	"fmt"
-	"os/user"
 	"time"
 
 	"github.com/redis/go-redis/v9"

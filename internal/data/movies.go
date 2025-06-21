@@ -24,7 +24,7 @@ type Movie struct {
 	Year       int32     `json:"year,omitempty"`
 	Runtime    Runtime   `redis:"runtime" json:"runtime,omitempty"`
 	Genres     []string  `json:"genres,omitempty"`
-	GenresJSON string    `redis:"genres json:"-"`
+	GenresJSON string    `redis:"genres" json:"-"`
 	Version    int32     `redis:"version" json:"version"`
 }
 
@@ -241,10 +241,6 @@ func (m MovieModel) Update(movie Movie) error {
 	// 	movie.Version,
 	// }
 	//
-	// // Create a context with a 3-second timeout to ensure the update operation does not hang indefinitely.
-	// // The cancel function should be called to release resources once the operation completes.
-	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	// defer cancel() // Ensure the context is cancelled to avoid resource leaks.
 	//
 	// // Execute the update query and attempt to scan the new version number into the movie struct.
 	// // If the update fails due to a version mismatch (i.e., another process has modified the record),
@@ -261,6 +257,13 @@ func (m MovieModel) Update(movie Movie) error {
 	// 		return err
 	// 	}
 	// }
+	// Create a context with a 3-second timeout to ensure the update operation does not hang indefinitely.
+	// The cancel function should be called to release resources once the operation completes.
+	ctxF, cancelF := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelF() // Ensure the context is cancelled to avoid resource leaks.
+
+	movieID := fmt.Sprintf("movieID:%v", movie.ID)
+	version := m.RDB.Get(ctxF, movieID)
 
 	return nil
 }
